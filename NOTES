@@ -1,0 +1,9 @@
+What you can use
+We expect you to build each component from scratch. In particular, you may not use any definitions from
+torch.nn, torch.nn.functional, or torch.optim except for the following:
+• torch.nn.Parameter
+• Container classes in torch.nn (e.g., Module, ModuleList, Sequential, etc.).1
+• The torch.optim.Optimizer base class
+You may use any other PyTorch definitions. If you would like to use a function or class and are not sure
+whether it is permitted, feel free to ask on Slack. When in doubt, consider if using it compromises the
+“from-scratch” ethos of the assignment.
