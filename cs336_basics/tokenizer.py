@@ -25,8 +25,8 @@ class BPETokenizerParams:
     merges: list[tuple[bytes, bytes]]  # bytes -> index
 
 # 训练分词器之前需要预分词
-PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 def pre_tokenize(string: str):
+    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
     return re.finditer(PAT, string)     # 注意返回的是一个迭代器
 
 
@@ -216,27 +216,97 @@ class Tokenizer:
         self.vocab = vocab
         self.merges = merges
         self.special_tokens = special_tokens
+        self.reversed_vocab = {v: k for k, v in self.vocab.items()}
+        self.merge_ranks = {pair: i for i, pair in enumerate(self.merges)}
 
+    @classmethod
     def from_files(cls, vocab_filepath: str, merges_filepath: str, special_tokens=None):
         vocab_from_file, merges_from_file = load_tokenizer(vocab_filepath, merges_filepath)
         return Tokenizer(vocab_from_file, merges_from_file, special_tokens)
 
 
     def encode(self, text: str) -> list[int]:
-        indices = list(map(int, text.encode("utf-8")))
+        def self_merge(indices: list[bytes], pair: tuple[bytes, bytes]):
+            new_seq = []
+            i = 0
+            n = len(indices)
+            while i < n:
+                if i < n - 1 and indices[i] == pair[0] and indices[i + 1] == pair[1]:
+                    new_seq.append(pair[0] + pair[1])
+                    i += 2
+                    continue
+                new_seq.append(indices[i])
+                i += 1
+            return new_seq
 
-        for merge in self.merges.items():
+        special_set = set(self.special_tokens or ())
+        if not self.special_tokens:  # None 或 []
+            pieces = [text]  # 直接整段走预分词
+        else:
+            specials = sorted(self.special_tokens, key=len, reverse=True)
+            split_pat = "(" + "|".join(re.escape(tok) for tok in specials) + ")"
+            pieces = re.split(split_pat, text)
 
-        return
+        all_words_iter = [pre_tokenize(piece) if piece not in special_set
+                          else piece for piece in pieces]  # 这是由迭代器组成的list，但是特殊token请注意直接保留
+        result = []
+
+        for word in all_words_iter:
+            if isinstance(word, str):
+                result.append(self.reversed_vocab[word.encode("utf-8")])
+                continue
+
+            tmp = [[bytes([y]) for y in x.group().encode("utf-8")] for x in word]
+            for elem in tmp:
+                while True:
+                    candidate_pair = Counter()
+                    for pair_in in zip(elem[:-1], elem[1:]):
+                        if self.merge_ranks.get(pair_in, -1) >= 0:
+                            candidate_pair[pair_in] += 1
+                    if not candidate_pair:
+                        break
+                    merge_pair = min(candidate_pair, key=self.merge_ranks.get)
+                    elem = self_merge(elem, merge_pair)
+
+                for byte_pair in elem:
+                    result.append(self.reversed_vocab[byte_pair])
+
+        return result
 
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
-        return
+        buffer = ""
+        keep = max(max((len(tok) for tok in self.special_tokens or ()), default=0) - 1, 0)
+
+        for chunk in iterable:
+            buffer += chunk
+            matches = list(pre_tokenize(buffer))
+            if not matches:
+                continue
+            X = len(buffer) - keep
+            cut = 0
+            for match in matches:
+                if match.start() <= X:
+                    cut = match.start()
+            for tok in sorted(self.special_tokens or (), key=len, reverse=True):
+                p = buffer.find(tok)
+                while p != -1:
+                    if p < cut < p + len(tok):
+                        cut = p
+                    p = buffer.find(tok, p + 1)
+
+            yield from self.encode(buffer[:cut])
+
+            buffer = buffer[cut:]
+
+        if buffer:
+            yield from self.encode(buffer)
 
 
     def decode(self, ids: list[int]) -> str:
-            return
-
+        byte_list = list(map(self.vocab.get, ids))
+        string = b"".join(byte_list).decode("utf-8", errors="replace")
+        return string
 
 
 if __name__ == "__main__":
@@ -257,11 +327,3 @@ if __name__ == "__main__":
     path_params = choose_path[config_long_or_short]
     save_tokenizer(vocab, merges, path_params[0], path_params[1])
     vocab, merges = load_tokenizer(path_params[0], path_params[1])
-    # for item in params.vocab.items():
-    #     print(item)
-    #
-    # tokenizer = Tokenizer(params)
-    # token = tokenizer.encode(string=string)
-    # print(token)
-    # stringback = tokenizer.decode(indices=token)
-    # print(stringback)
