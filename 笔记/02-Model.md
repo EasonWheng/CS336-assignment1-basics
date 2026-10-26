@@ -1,6 +1,6 @@
 # Model 基础构件
 
-2026-10-25 · test_linear、test_embedding、test_rmsnorm、test_silu、test_swiglu、test_rope、test_scaled_dot_product_attention、test_4d_scaled_dot_product_attention、两组 MHA 测试通过
+2026-10-25 · test_linear、test_embedding、test_rmsnorm、test_silu、test_swiglu、test_rope、test_scaled_dot_product_attention、test_4d_scaled_dot_product_attention、两组 MHA、test_transformer_block 通过
 
 ## Linear
 
@@ -42,7 +42,7 @@ return self.weight[token_ids]
 
 ## RMSNorm
 
-`cs336_basics/model.py:51`。参数只有一个 `gain`，`torch.ones` 初始化，`eps=1e-5`。
+`cs336_basics/model.py:51`。参数只有一个 `weight`，`torch.ones` 初始化，`eps=1e-5`。
 
 第一版前向写成 `sum(value ** 2 for value in x)`。Python 的 `sum` 从 0 开始，沿第 0 维遍历，`(4,12,64)` 的输入被沿 batch 加总，除以 `d_model` 之后是 `(12,64)`，再和 `x` 相除按 batch 广播，四个样本互相污染。改成沿最后一维求均方：
 
@@ -58,7 +58,7 @@ adapter 第一次报：
 TypeError: ones() received an invalid combination of arguments - got (int, dtype=NoneType, device=Tensor)
 ```
 
-`RMSNorm(d_model, eps, weights)` 按位置传参，第三个参数是 `device`。构造只收形状，权重走 `load_state_dict({"gain": weights})`（`tests/adapters.py:388`）。
+`RMSNorm(d_model, eps, weights)` 按位置传参，第三个参数是 `device`。构造只收形状，权重走 `load_state_dict({"weight": weights})`（`tests/adapters.py:406`）。
 
 前向开头 `x.to(torch.float32)`，结尾 `.to(in_type)` 降回原 dtype。
 
@@ -84,7 +84,7 @@ return self.w2(SiLU(self.w1(x)) * self.w3(x))
 
 `d_ff` 从构造参数进，测试传 128（`tests/conftest.py:247`）。`(8/3) × 64 ≈ 171`，按最近的 64 倍数会算成 192，写死成自动推导的话 `load_state_dict` 形状对不上。
 
-adapter 用 `.data` 直接赋三份权重（`tests/adapters.py:89`），没走 `state_dict`。
+adapter 用 `.data` 直接赋三份权重（`tests/adapters.py:93`），没走 `state_dict`。
 
 ## softmax
 
@@ -127,7 +127,7 @@ MHA 里 Q 是 `(batch, head, seq, d_k)`，测试传的 `token_positions` 是 `(1
 
 ## 因果多头自注意力
 
-`cs336_basics/model.py:147`。四个投影都是 `Linear(d_model, d_model)`，投影后拆头：
+`cs336_basics/model.py:147`。四个投影都是 `Linear(d_model, d_model)`，属性名对齐参考权重：`q_proj`、`k_proj`、`v_proj`、`output_proj`。投影后拆头：
 
 ```python
 rearrange(Q, "... seq (head dkv) -> ... head seq dkv", head=num_heads)
@@ -145,10 +145,26 @@ mask = torch.tril(torch.ones(seq, seq, dtype=torch.bool, device=in_features.devi
 
 第一版没写 `device`，CPU 上测试全过，搬到 GPU 会在加掩码时报设备不一致。
 
+## TransformerBlock
+
+`cs336_basics/model.py:179`。两个 RMSNorm、一个 MHA、一个 SwiGLU，属性名用 `ln1`、`ln2`、`attn`、`ffn`，和参考 key 一致。
+
+第一版第二个残差写成 `in_features + out_ffn`，第一个子层的输出被丢掉。正确链路是 `adder1 = in_features + out_attn`，`fnl_result = adder1 + out_ffn`，对应手册式 (25)(26)。
+
+RoPE 在 Block 里构造后传给 MHA，`d_k = d_model // num_heads`。位置用 `torch.arange(seq_len, dtype=torch.long)`，adapter 不传。
+
+`run_transformer_block` 直接 `load_state_dict(weights)`（`tests/adapters.py:299`），key 必须一字不差：
+
+```
+attn.q_proj.weight    ln1.weight    ffn.w1.weight
+```
+
+为此改了一轮命名：Block 里 `rsm1/rsm2/attention/FFN` 改成 `ln1/ln2/attn/ffn`，MHA 的 `w_q/w_k/w_v/w_o` 改成 `q_proj/...`，RMSNorm 的参数 `gain` 改成 `weight`。`run_rmsnorm` 的 key 跟着换成 `"weight"`（`:406`），MHA 两处 adapter 也同步改了投影名。
+
 ## adapters
 
-Linear、Embedding、RMSNorm 三个 adapter 构造后装权重，key 跟属性名对上，写错时报 `Missing key(s) in state_dict: "weight"`。SwiGLU 用 `.data` 直接赋值，SiLU 直接调函数（`tests/adapters.py:403`）。MHA 的两个 adapter 装四份投影权重，带 RoPE 的那个多构造一个 rope 对象传进构造函数。
+Linear、Embedding、RMSNorm 三个 adapter 构造后装权重，属性名和参考 key 对上，写错时报 `Missing key(s) in state_dict: "weight"`。SwiGLU 用 `.data` 直接赋值（`tests/adapters.py:93`），SiLU 直接调函数（`:421`）。MHA 的两个 adapter 装四份投影权重，带 RoPE 的那个多构造一个 rope 对象。Block 一句 `load_state_dict(weights)` 装完九份权重。
 
 ## 下一步
 
-只剩 TransformerBlock 和 TransformerLM 的组装。
+只剩 TransformerLM 的组装。

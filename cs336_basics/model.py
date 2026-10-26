@@ -60,7 +60,7 @@ class RMSNorm(nn.Module):
         super(RMSNorm, self).__init__()
         self.d_model = d_model
         self.eps = eps
-        self.gain = nn.Parameter(torch.ones(d_model, device=device, dtype=dtype))
+        self.weight = nn.Parameter(torch.ones(d_model, device=device, dtype=dtype))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -70,7 +70,7 @@ class RMSNorm(nn.Module):
         in_type = x.dtype
         x = x.to(torch.float32)
         RMS_x = ((x ** 2).mean(dim=-1, keepdim=True) + self.eps) ** 0.5
-        result = x * self.gain / RMS_x
+        result = x * self.weight / RMS_x
 
         return result.to(in_type)
 
@@ -104,11 +104,11 @@ class RotaryPositionalEmbedding(nn.Module):
     max_seq_len: int：将要输入的最大序列长度
     device: torch.device | None = None：存放缓冲区所在的设备
     """
-    def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None):
+    def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None, dtype=None):
         super(RotaryPositionalEmbedding, self).__init__()
 
-        positions = torch.arange(max_seq_len, device=device)
-        freqs = theta ** (-torch.arange(0, d_k, 2, device=device) / d_k)
+        positions = torch.arange(max_seq_len, device=device, dtype=torch.long)
+        freqs = theta ** (-torch.arange(0, d_k, 2, device=device, dtype=dtype) / d_k)
         angles = einsum(positions, freqs, "max_seq_len, d -> max_seq_len d")
         cos, sin = angles.cos(), angles.sin()
         self.register_buffer("cos", cos, persistent=False)
@@ -146,22 +146,22 @@ def scaled_dot_product_attention(query: torch.Tensor,
 
 class MultiHeadSelfAttention(nn.Module):
     def __init__(self, d_model: int, num_heads: int,
-                 rope: RotaryPositionalEmbedding | None = None):
+                 rope: RotaryPositionalEmbedding | None = None, device=None, dtype=None):
         super(MultiHeadSelfAttention, self).__init__()
         self.num_heads = num_heads
         self.d_kv = d_model // num_heads      # dk == dv
 
-        self.w_q = Linear(d_model, d_model)
-        self.w_k = Linear(d_model, d_model)
-        self.w_v = Linear(d_model, d_model)
-        self.w_o = Linear(d_model, d_model)
+        self.q_proj = Linear(d_model, d_model, device=device, dtype=dtype)
+        self.k_proj = Linear(d_model, d_model, device=device, dtype=dtype)
+        self.v_proj = Linear(d_model, d_model, device=device, dtype=dtype)
+        self.output_proj = Linear(d_model, d_model, device=device, dtype=dtype)
         self.rope = rope
 
     def forward(self, in_features: Float[Tensor, " ... sequence_length d_model"],
                 token_positions: Int[Tensor, " ... sequence_length"] | None = None):
-        Q = self.w_q.forward(in_features)
-        K = self.w_k.forward(in_features)
-        V = self.w_v.forward(in_features)
+        Q = self.q_proj.forward(in_features)
+        K = self.k_proj.forward(in_features)
+        V = self.v_proj.forward(in_features)
 
         Q = rearrange(Q, "... sequence_length (head dkv) -> ... head sequence_length dkv", head=self.num_heads)
         K = rearrange(K, "... sequence_length (head dkv) -> ... head sequence_length dkv", head=self.num_heads)
@@ -173,5 +173,32 @@ class MultiHeadSelfAttention(nn.Module):
         mask = torch.tril(torch.ones(in_features.size(-2), in_features.size(-2), dtype=torch.bool, device=in_features.device))
         tmp = rearrange(scaled_dot_product_attention(Q, K, V, mask),
                         "... head sequence_length dkv -> ... sequence_length (head dkv)")
-        return self.w_o.forward(tmp)
+        return self.output_proj.forward(tmp)
+
+
+class TransformerBlock(nn.Module):
+    """
+    实现 pre-norm Transformer 块。你的 Transformer 块至少应接受以下参数：
+    d_model: int：Transformer 块输入的维度。
+    num_heads: int：多头自注意力使用的头数。
+    d_ff: int：逐位置前馈内层的维度。
+    """
+    def __init__(self, d_model: int, num_heads: int, d_ff: int,
+                 max_seq_len: int, theta: float, device: torch.device | None = None, dtype: torch.dtype |None = None):
+        super(TransformerBlock, self).__init__()
+        self.ln1 = RMSNorm(d_model, device=device, dtype=dtype)
+        self.ln2 = RMSNorm(d_model, device=device, dtype=dtype)
+        self.rope = RotaryPositionalEmbedding(theta, d_model // num_heads, max_seq_len, device=device, dtype=dtype)
+        self.attn = MultiHeadSelfAttention(d_model, num_heads, self.rope, device=device, dtype=dtype)
+        self.ffn = SwiGLU(d_model, d_ff, device=device, dtype=dtype)
+
+    def forward(self, in_features: Float[Tensor, " ... sequence_length d_model"]):
+        out_rsm1 = self.ln1.forward(in_features)
+        token_positions = torch.arange(in_features.shape[-2], device=in_features.device, dtype=torch.long)
+        out_attn = self.attn.forward(out_rsm1, token_positions)
+        adder1 = in_features + out_attn
+        out_rsm2 = self.ln2.forward(adder1)
+        out_ffn = self.ffn.forward(out_rsm2)
+        fnl_result = adder1 + out_ffn
+        return fnl_result
 

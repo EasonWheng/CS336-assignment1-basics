@@ -12,7 +12,8 @@ from cs336_basics.tokenizer import train_bpe, Tokenizer
 from cs336_basics.model import (Linear,
                                 Embedding, RMSNorm, SiLU,
                                 SwiGLU, RotaryPositionalEmbedding, softmax,
-                                scaled_dot_product_attention, MultiHeadSelfAttention)
+                                scaled_dot_product_attention, MultiHeadSelfAttention,
+                                TransformerBlock)
 
 
 def run_linear(
@@ -148,10 +149,10 @@ def run_multihead_self_attention(
         implementation with the given QKV projection weights and input features.
     """
     MHSA = MultiHeadSelfAttention(d_model, num_heads)
-    MHSA.w_q.load_state_dict({"weight": q_proj_weight})
-    MHSA.w_k.load_state_dict({"weight": k_proj_weight})
-    MHSA.w_v.load_state_dict({"weight": v_proj_weight})
-    MHSA.w_o.load_state_dict({"weight": o_proj_weight})
+    MHSA.q_proj.load_state_dict({"weight": q_proj_weight})
+    MHSA.k_proj.load_state_dict({"weight": k_proj_weight})
+    MHSA.v_proj.load_state_dict({"weight": v_proj_weight})
+    MHSA.output_proj.load_state_dict({"weight": o_proj_weight})
     return MHSA.forward(in_features)
 
 
@@ -194,10 +195,10 @@ def run_multihead_self_attention_with_rope(
     """
     rope = RotaryPositionalEmbedding(theta, d_model // num_heads, max_seq_len)
     MHSA = MultiHeadSelfAttention(d_model, num_heads, rope)
-    MHSA.w_q.load_state_dict({"weight": q_proj_weight})
-    MHSA.w_k.load_state_dict({"weight": k_proj_weight})
-    MHSA.w_v.load_state_dict({"weight": v_proj_weight})
-    MHSA.w_o.load_state_dict({"weight": o_proj_weight})
+    MHSA.q_proj.load_state_dict({"weight": q_proj_weight})
+    MHSA.k_proj.load_state_dict({"weight": k_proj_weight})
+    MHSA.v_proj.load_state_dict({"weight": v_proj_weight})
+    MHSA.output_proj.load_state_dict({"weight": o_proj_weight})
     return MHSA.forward(in_features, token_positions)
 
 
@@ -294,7 +295,9 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    transformer_block = TransformerBlock(d_model, num_heads, d_ff, max_seq_len, theta)
+    transformer_block.load_state_dict(weights)
+    return transformer_block.forward(in_features)
 
 
 def run_transformer_lm(
@@ -400,7 +403,7 @@ def run_rmsnorm(
         RMSNorm of the `in_features`.
     """
     my_RMSNorm = RMSNorm(d_model, eps)
-    my_RMSNorm.load_state_dict({"gain": weights})
+    my_RMSNorm.load_state_dict({"weight": weights})
     return my_RMSNorm.forward(in_features)
 
 
