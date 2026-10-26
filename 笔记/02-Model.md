@@ -137,13 +137,13 @@ rearrange(Q, "... seq (head dkv) -> ... head seq dkv", head=num_heads)
 
 第二个问题是没加因果掩码。adapter 构造时不传 mask，12 个键全部可见，不匹配率 91.6%。两个测试的期望第一行都是 `-0.240338`，位置 0 的旋转是恒等变换，只有第一行只关注自己时才会相等。
 
-掩码在 forward 里按当前序列长度现造：
+掩码在 forward 里按当前序列长度现造，设备跟着输入走：
 
 ```python
-mask = torch.tril(torch.ones(seq, seq, dtype=torch.bool))
+mask = torch.tril(torch.ones(seq, seq, dtype=torch.bool, device=in_features.device))
 ```
 
-现在建在 CPU 上，上 GPU 训练时要补 `device=in_features.device`。
+第一版没写 `device`，CPU 上测试全过，搬到 GPU 会在加掩码时报设备不一致。
 
 ## adapters
 

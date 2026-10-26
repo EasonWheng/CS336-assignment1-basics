@@ -170,7 +170,7 @@ class MultiHeadSelfAttention(nn.Module):
         if self.rope is not None and token_positions is not None:
             Q = self.rope.forward(Q, token_positions)
             K = self.rope.forward(K, token_positions)
-        mask = torch.tril(torch.ones(in_features.size(-2), in_features.size(-2), dtype=torch.bool))
+        mask = torch.tril(torch.ones(in_features.size(-2), in_features.size(-2), dtype=torch.bool, device=in_features.device))
         tmp = rearrange(scaled_dot_product_attention(Q, K, V, mask),
                         "... head sequence_length dkv -> ... sequence_length (head dkv)")
         return self.w_o.forward(tmp)
