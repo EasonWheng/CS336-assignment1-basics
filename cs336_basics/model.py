@@ -1,4 +1,4 @@
-# Linear, Embedding, RMSNorm, RoPE, MHA, SwiGLU, Block, LM
+# Linear, Embedding, RMSNorm, SwiGLU, RoPE, MHA, Block, LM
 
 import torch, torch.nn as nn
 from einops import rearrange, einsum
@@ -78,7 +78,6 @@ class RMSNorm(nn.Module):
 def SiLU(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
     return in_features * torch.sigmoid(in_features)
 
-
 class SwiGLU(nn.Module):
     """
     实现 SwiGLU 前馈网络，由 SiLU 激活函数和一个 GLU 组成。
@@ -95,3 +94,84 @@ class SwiGLU(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.w2(SiLU(self.w1(x)) * self.w3(x))
+
+
+class RotaryPositionalEmbedding(nn.Module):
+    """
+    构造 RoPE 模块，按需创建缓冲区。
+    theta: float：RoPE 的 Θ 值
+    d_k: int：查询向量和键向量的维度
+    max_seq_len: int：将要输入的最大序列长度
+    device: torch.device | None = None：存放缓冲区所在的设备
+    """
+    def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None):
+        super(RotaryPositionalEmbedding, self).__init__()
+
+        positions = torch.arange(max_seq_len, device=device)
+        freqs = theta ** (-torch.arange(0, d_k, 2, device=device) / d_k)
+        angles = einsum(positions, freqs, "max_seq_len, d -> max_seq_len d")
+        cos, sin = angles.cos(), angles.sin()
+        self.register_buffer("cos", cos, persistent=False)
+        self.register_buffer("sin", sin, persistent=False)
+
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
+        pair_x = rearrange(x, "... (half pair) -> ... half pair", pair=2)
+        a = pair_x[..., 0]      # cos
+        b = pair_x[..., 1]      # sin
+        d_1 = a * self.cos[token_positions] - b * self.sin[token_positions]
+        d_2 = a * self.sin[token_positions] + b * self.cos[token_positions]
+        result = torch.stack([d_1, d_2], dim=-1)    # out = torch.stack([d_1, d_2], dim=-1)   # (..., seq, half, 2)
+        return rearrange(result, "... half pair -> ... (half pair)")
+
+
+def softmax(x: torch.Tensor, dim: int = -1) -> torch.Tensor:
+    tmp = x - x.max(dim=dim, keepdim=True).values
+    return torch.exp(tmp) / torch.sum(torch.exp(tmp), dim=dim, keepdim=True)
+
+def scaled_dot_product_attention(query: torch.Tensor,
+                                 key: torch.Tensor,
+                                 value: torch.Tensor,
+                                 mask: Bool[Tensor, " ... queries keys"] | None = None) -> torch.Tensor:
+    """
+    实现缩放点积注意力函数。实现应能处理形状为 (batch_size, ..., seq_len, d_k) 的键和查询，
+    以及形状为 (batch_size, ..., seq_len, d_v) 的值，其中 ... 表示任意数量的其他类批次维度（若提供）。
+    实现应返回形状为 (batch_size, ..., seq_len, d_v) 的输出。
+    """
+    dk = query.size(-1)
+    tmp_attn = einsum(query, key, "... n d_k, ... m d_k -> ... n m") / (dk ** 0.5)
+    if mask is not None:
+        tmp_attn.masked_fill_(~mask, float("-inf"))
+    attn_weights = softmax(tmp_attn, dim=-1)
+    return einsum(attn_weights, value, "... n m, ... m d_v -> ... n d_v")
+
+class MultiHeadSelfAttention(nn.Module):
+    def __init__(self, d_model: int, num_heads: int,
+                 rope: RotaryPositionalEmbedding | None = None):
+        super(MultiHeadSelfAttention, self).__init__()
+        self.num_heads = num_heads
+        self.d_kv = d_model // num_heads      # dk == dv
+
+        self.w_q = Linear(d_model, d_model)
+        self.w_k = Linear(d_model, d_model)
+        self.w_v = Linear(d_model, d_model)
+        self.w_o = Linear(d_model, d_model)
+        self.rope = rope
+
+    def forward(self, in_features: Float[Tensor, " ... sequence_length d_model"],
+                token_positions: Int[Tensor, " ... sequence_length"] | None = None):
+        Q = self.w_q.forward(in_features)
+        K = self.w_k.forward(in_features)
+        V = self.w_v.forward(in_features)
+
+        Q = rearrange(Q, "... sequence_length (head dkv) -> ... head sequence_length dkv", head=self.num_heads)
+        K = rearrange(K, "... sequence_length (head dkv) -> ... head sequence_length dkv", head=self.num_heads)
+        V = rearrange(V, "... sequence_length (head dkv) -> ... head sequence_length dkv", head=self.num_heads)
+
+        if self.rope is not None and token_positions is not None:
+            Q = self.rope.forward(Q, token_positions)
+            K = self.rope.forward(K, token_positions)
+        mask = torch.tril(torch.ones(in_features.size(-2), in_features.size(-2), dtype=torch.bool))
+        tmp = rearrange(scaled_dot_product_attention(Q, K, V, mask),
+                        "... head sequence_length dkv -> ... sequence_length (head dkv)")
+        return self.w_o.forward(tmp)
+

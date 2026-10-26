@@ -1,6 +1,6 @@
 # Model 基础构件
 
-2026-10-25 · test_linear、test_embedding、test_rmsnorm、test_silu、test_swiglu 通过
+2026-10-25 · test_linear、test_embedding、test_rmsnorm、test_silu、test_swiglu、test_rope、test_scaled_dot_product_attention、test_4d_scaled_dot_product_attention、两组 MHA 测试通过
 
 ## Linear
 
@@ -86,10 +86,69 @@ return self.w2(SiLU(self.w1(x)) * self.w3(x))
 
 adapter 用 `.data` 直接赋三份权重（`tests/adapters.py:89`），没走 `state_dict`。
 
+## softmax
+
+`cs336_basics/model.py:127`。
+
+```python
+tmp = x - x.max(dim=dim, keepdim=True).values
+return torch.exp(tmp) / torch.sum(torch.exp(tmp), dim=dim, keepdim=True)
+```
+
+`x.max(dim=...)` 返回 `(values, indices)` 的命名元组，只要值就取 `.values`，或者用 `torch.amax`。`keepdim=True` 少了，减法和除法都广播不上。输入里放一个 1000，不减最大值会得到 `inf / inf = nan`。
+
+## 缩放点积注意力
+
+`cs336_basics/model.py:131`。
+
+```python
+tmp_attn = einsum(query, key, "... n d_k, ... m d_k -> ... n m") / (dk ** 0.5)
+tmp_attn.masked_fill_(~mask, float("-inf"))
+```
+
+`dk` 取 `query.size(-1)`，和 `d_v` 无关。掩码的 True 表示关注，取反后把 False 的位置填 `-inf`，`exp(-inf)` 精确等于 0。三阶和四阶输入两个测试都过了。
+
+## RoPE
+
+`cs336_basics/model.py:99`。缓冲区 `(max_seq_len, d_k//2)`，`register_buffer(..., persistent=False)`。
+
+第一版指数写成 `theta ** (+arange(0, d_k, 2) / d_k)`，少一个负号，频率随 k 递增。`d_k=64, theta=10000` 时第 32 对每走一步转 7499 弧度。改回负指数后 `freqs[0]=1`、`freqs[-1]≈1.3e-4`。
+
+前向第一版往 `rearrange` 出来的视图里写：
+
+```python
+pair_x[..., 0] = d_1
+pair_x[..., 0] = d_2
+```
+
+两行都落在第 0 列，`b` 一直没更新，输入张量也被改掉。训练时反向传播会报 inplace 相关的错误。改成 `torch.stack([d_1, d_2], dim=-1)` 重建张量。
+
+MHA 里 Q 是 `(batch, head, seq, d_k)`，测试传的 `token_positions` 是 `(1, seq)`，cos 取出来 `(1, seq, half)`，靠广播覆盖 batch 和 head 两维。
+
+## 因果多头自注意力
+
+`cs336_basics/model.py:147`。四个投影都是 `Linear(d_model, d_model)`，投影后拆头：
+
+```python
+rearrange(Q, "... seq (head dkv) -> ... head seq dkv", head=num_heads)
+```
+
+第一版写成 `"... (head dkv) -> ... head dkv"`，得到 `(batch, seq, head, dkv)`。注意力把最后两维当 `(queries, d_k)`，头被当成查询位置、序列被当成批次，算出来是四个头之间的注意力。输出形状不变，100% 不匹配。
+
+第二个问题是没加因果掩码。adapter 构造时不传 mask，12 个键全部可见，不匹配率 91.6%。两个测试的期望第一行都是 `-0.240338`，位置 0 的旋转是恒等变换，只有第一行只关注自己时才会相等。
+
+掩码在 forward 里按当前序列长度现造：
+
+```python
+mask = torch.tril(torch.ones(seq, seq, dtype=torch.bool))
+```
+
+现在建在 CPU 上，上 GPU 训练时要补 `device=in_features.device`。
+
 ## adapters
 
-Linear、Embedding、RMSNorm 三个 adapter 构造后装权重，key 跟属性名对上，写错时报 `Missing key(s) in state_dict: "weight"`。SwiGLU 用 `.data` 直接赋值，SiLU 直接调函数（`tests/adapters.py:403`）。
+Linear、Embedding、RMSNorm 三个 adapter 构造后装权重，key 跟属性名对上，写错时报 `Missing key(s) in state_dict: "weight"`。SwiGLU 用 `.data` 直接赋值，SiLU 直接调函数（`tests/adapters.py:403`）。MHA 的两个 adapter 装四份投影权重，带 RoPE 的那个多构造一个 rope 对象传进构造函数。
 
 ## 下一步
 
-RoPE 和缩放点积注意力，往上是 MHA、Block、LM。
+只剩 TransformerBlock 和 TransformerLM 的组装。
