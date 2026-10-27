@@ -13,7 +13,7 @@ from cs336_basics.model import (Linear,
                                 Embedding, RMSNorm, SiLU,
                                 SwiGLU, RotaryPositionalEmbedding, softmax,
                                 scaled_dot_product_attention, MultiHeadSelfAttention,
-                                TransformerBlock)
+                                TransformerBlock, TransformerLM)
 
 
 def run_linear(
@@ -379,7 +379,10 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    transformer_lm = TransformerLM(d_model, num_heads, d_ff, vocab_size, context_length,
+                                   num_layers, rope_theta)
+    transformer_lm.load_state_dict(weights)
+    return transformer_lm.forward(in_indices)
 
 
 def run_rmsnorm(

@@ -1,6 +1,6 @@
 # Model 基础构件
 
-2026-10-25 · test_linear、test_embedding、test_rmsnorm、test_silu、test_swiglu、test_rope、test_scaled_dot_product_attention、test_4d_scaled_dot_product_attention、两组 MHA、test_transformer_block 通过
+2026-10-25 · model.py 的 13 项测试全部通过，含 test_transformer_lm 与 test_transformer_lm_truncated_input
 
 ## Linear
 
@@ -161,10 +161,20 @@ attn.q_proj.weight    ln1.weight    ffn.w1.weight
 
 为此改了一轮命名：Block 里 `rsm1/rsm2/attention/FFN` 改成 `ln1/ln2/attn/ffn`，MHA 的 `w_q/w_k/w_v/w_o` 改成 `q_proj/...`，RMSNorm 的参数 `gain` 改成 `weight`。`run_rmsnorm` 的 key 跟着换成 `"weight"`（`:406`），MHA 两处 adapter 也同步改了投影名。
 
+## TransformerLM
+
+`cs336_basics/model.py:205`。四个属性名 `token_embeddings`、`layers`、`ln_final`、`lm_head`，对应参考权重的四类前缀。
+
+`layers` 用 `nn.ModuleList`。普通 `list` 里的模块不会被注册，`parameters()`、`.to()`、`state_dict()` 都看不到。换之后 key 自动是 `layers.0.attn.q_proj.weight`、`layers.1...` 这种形式。
+
+前向四段：embedding → 循环过 block → `ln_final` → `lm_head`。序列长度取输入的实际长度，`context_length` 只决定 RoPE 缓冲区大小和位置上限，截断输入那项测试靠的就是这一点。
+
+图 1 在 LM head 后面画了 Softmax，第一版照着加了，两个 LM 测试都失败。`tests/_snapshots/test_transformer_lm.npz` 里存的是 logits：`min -15.59`，每行求和是 -47339 这种量级，概率的行和应当是 1。图里那步属于生成流程，模型边界停在 LM head。训练时交叉熵内部还会做一次 `log_softmax`。
+
 ## adapters
 
-Linear、Embedding、RMSNorm 三个 adapter 构造后装权重，属性名和参考 key 对上，写错时报 `Missing key(s) in state_dict: "weight"`。SwiGLU 用 `.data` 直接赋值（`tests/adapters.py:93`），SiLU 直接调函数（`:421`）。MHA 的两个 adapter 装四份投影权重，带 RoPE 的那个多构造一个 rope 对象。Block 一句 `load_state_dict(weights)` 装完九份权重。
+Linear、Embedding、RMSNorm 三个 adapter 构造后装权重，属性名和参考 key 对上，写错时报 `Missing key(s) in state_dict: "weight"`。SwiGLU 用 `.data` 直接赋值（`tests/adapters.py:93`），SiLU 直接调函数（`:421`）。MHA 的两个 adapter 装四份投影权重，带 RoPE 的那个多构造一个 rope 对象。Block 和 LM 都是一句 `load_state_dict(weights)` 装完（`:299`、`:383`）。
 
 ## 下一步
 
-只剩 TransformerLM 的组装。
+模型部分完成。剩下 `nn_utils.py` 的 cross_entropy 和 gradient_clipping、`optimizer.py`、`data.py`、`serialization.py`。
