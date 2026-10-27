@@ -202,6 +202,7 @@ class TransformerBlock(nn.Module):
         fnl_result = adder1 + out_ffn
         return fnl_result
 
+
 class TransformerLM(nn.Module):
     def __init__(self, d_model: int, num_heads: int, d_ff: int,
                  vocab_size: int,
