@@ -230,3 +230,56 @@ class TransformerLM(nn.Module):
         ln_final_out = self.ln_final.forward(embeddings)
         output_embeddings = self.lm_head.forward(ln_final_out)
         return output_embeddings
+
+
+def transformer_accounting(d_model, num_layers, d_ff, vocab_size):
+    """
+    用于计算可训练参数数量，不是计算内存消耗，计算内存消耗请使用下面一个函数！
+    :param d_model:
+    :param num_layers:
+    :param d_ff:
+    :param vocab_size:
+    :return:
+    """
+    count_blocks = num_layers * d_model * (2 + 4 * d_model + 3 * d_ff)
+    return count_blocks + d_model + 2 * vocab_size * d_model
+
+
+def transformer_storage_accounting(d_model, num_layers, d_ff, vocab_size):
+    """
+    单精度（float32）是 32 位：1 位符号、8 位指数、23 位尾数，正好 4 个字节。
+    :param d_model:
+    :param num_layers:
+    :param d_ff:
+    :param vocab_size:
+    :return:
+    """
+    params = transformer_accounting(d_model, num_layers, d_ff, vocab_size)
+    storage_all = params * 4
+    print(f"模型参数量: {params} ({params / 1e9} B), "
+          f"模型内存消耗: {storage_all} B ({storage_all / 1e9} GB)")
+    return storage_all
+
+
+def block_matmul_FLOPs(d_model, d_ff, context_length):
+    WQWKWV_matmul = 6 * context_length * d_model ** 2
+    head_matmul = 4 * (context_length ** 2) * d_model
+    head_concatenation_matmul = 2 * context_length * (d_model ** 2)
+    FFN_SwiGLU_matmul = 6 * context_length * d_model * d_ff
+    # all_matmul_block =
+    # 2 * context_length * d_model * (4 * d_model + 2 * context_length + 3 * d_ff)
+    all_matmul_block = WQWKWV_matmul + head_matmul + head_concatenation_matmul + FFN_SwiGLU_matmul
+    print(f"单个block中:\n"
+          f"投影: {WQWKWV_matmul}FLOPs, 占比为: {WQWKWV_matmul / all_matmul_block * 100}%\n"
+          f"多头注意力计算(不含头拼接): {head_matmul}FLOPs, 占比为: {head_matmul / all_matmul_block * 100}%\n"
+          f"head拼接+输出投影: {head_concatenation_matmul}FLOPs, 占比为: {head_concatenation_matmul / all_matmul_block * 100}%\n"
+          f"FFN: {FFN_SwiGLU_matmul}FLOPs, 占比为: {FFN_SwiGLU_matmul / all_matmul_block * 100}%\n")
+    return all_matmul_block
+
+
+def count_matmul_FLOPs(d_model, num_layers, d_ff, vocab_size, context_length):
+    one_block_FLOPs = block_matmul_FLOPs(d_model, d_ff, context_length)
+    all_FLOPs = one_block_FLOPs * num_layers + 2 * context_length * d_model * vocab_size
+    print(f"单个block的matmul计算量为 {one_block_FLOPs} FLOPs\n"
+          f"语言模型的matmul总计算量为 {all_FLOPs} FLOPs")
+    return all_FLOPs

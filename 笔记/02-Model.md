@@ -171,6 +171,24 @@ attn.q_proj.weight    ln1.weight    ffn.w1.weight
 
 图 1 在 LM head 后面画了 Softmax，第一版照着加了，两个 LM 测试都失败。`tests/_snapshots/test_transformer_lm.npz` 里存的是 logits：`min -15.59`，每行求和是 -47339 这种量级，概率的行和应当是 1。图里那步属于生成流程，模型边界停在 LM head。训练时交叉熵内部还会做一次 `log_softmax`。
 
+## 核算函数
+
+`cs336_basics/model.py:235` 起四个函数，算写作业用的参数量、内存和 FLOPs，不参与模型前向。
+
+参数量每块 `d_model × (4·d_model + 3·d_ff + 2)`，块外加两份 `vocab_size × d_model` 和 `d_model`。GPT-2 XL 配置得到 1,640,452,800，48 个 block 占 90.2%。乘 4 字节是 6,561,811,200 B，约 6.56 GB 或 6.11 GiB。
+
+`block_matmul_FLOPs` 第一版漏了 Q、K、V 三个投影，只算分数矩阵、输出投影和 FFN，单块得 54,106,521,600。补上 `6·n·d_model²` 之后单块 69,835,161,600，整模型加 LM head 是 3,516,769,894,400，约 3.52 TFLOPs。
+
+四项占比：QKV 投影 22.5%、分数与加权 9.6%、输出投影 7.5%、FFN 60.4%。
+
+注释里那版闭式也错过一次，`2·n·(4·d_model + 2·n + 3·d_ff)` 括号里每一项都少一个 `d_model`：
+
+```python
+2 * n * d_model * (4 * d_model + 2 * n + 3 * d_ff)
+```
+
+代入配置得 69,835,161,600，和逐项相加一致。这个式子已经包含 QKV 投影，不需要另加。全部是前向的量，训练按三倍估。
+
 ## adapters
 
 Linear、Embedding、RMSNorm 三个 adapter 构造后装权重，属性名和参考 key 对上，写错时报 `Missing key(s) in state_dict: "weight"`。SwiGLU 用 `.data` 直接赋值（`tests/adapters.py:93`），SiLU 直接调函数（`:421`）。MHA 的两个 adapter 装四份投影权重，带 RoPE 的那个多构造一个 rope 对象。Block 和 LM 都是一句 `load_state_dict(weights)` 装完（`:299`、`:383`）。
