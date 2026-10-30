@@ -181,7 +181,7 @@ attn.q_proj.weight    ln1.weight    ffn.w1.weight
 
 四项占比：QKV 投影 22.5%、分数与加权 9.6%、输出投影 7.5%、FFN 60.4%。
 
-注释里那版闭式也错过一次，`2·n·(4·d_model + 2·n + 3·d_ff)` 括号里每一项都少一个 `d_model`：
+注释里抄闭式时把外面的 `d_model` 漏了，手写推导是对的。写全应该是
 
 ```python
 2 * n * d_model * (4 * d_model + 2 * n + 3 * d_ff)
