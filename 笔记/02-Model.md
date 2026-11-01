@@ -2,6 +2,8 @@
 
 2026-10-25 · model.py 的 13 项测试全部通过，含 test_transformer_lm 与 test_transformer_lm_truncated_input
 
+2026-11-01 · nn_utils.py 的 test_cross_entropy 通过
+
 ## Linear
 
 `cs336_basics/model.py:11`。权重存成 `(d_out, d_in)`，方向和 `tests/adapters.py:19` 的 `weights` 标注一致，装权重不用转置。
@@ -201,10 +203,44 @@ attn.q_proj.weight    ln1.weight    ffn.w1.weight
 
 占比的分母是整次前向的总 FLOPs。`count_matmul_FLOPs` 打印的是单块占比，两者差几个点，FFN 在 1024 时是 60.36% 对 57.53%。
 
+## 交叉熵
+
+`cs336_basics/nn_utils.py:8`。手册式 (16) 的分母是 `|D|·m`，`|D|` 是批大小，`m` 是序列长度，相乘就是全部位置的个数，`.mean()` 对前导维一起求平均正好对上。测试把 `(2,4,5)` 的输入 `view(-1,5)` 压成 `(8,5)`，targets 是 `(8,)`。
+
+第一版写成 `Ui_x = tmp[target]`：
+
+```python
+tmp = logits - logits.max(dim=-1, keepdim=True).values   # (8, 5)
+Ui_x = tmp[target]                                       # (8, 5)，取的是整行
+```
+
+`target` 作用在第 0 维，把 8 行中对应的几行整行取出来。期望 1.6094727516，算出 1.6025854349，相对差 0.43%。这个量级像精度问题，实际是取错了元素。`tmp[..., target]` 也一样，`...` 展开成第 0 维，结果 `(8,8)`。
+
+要沿最后一维取，index 得和输入同维数：
+
+```python
+Ui_x = tmp.gather(-1, target.unsqueeze(-1)).squeeze(-1)
+```
+
+`(8,)` 补成 `(8,1)`，取完再降回 `(8,)`。`dim=-1` 表示每个位置在自己的 5 个 logit 里挑一个。
+
+损失写成 log-sum-exp 相减，`log` 和 `exp` 从这两步里合在一起：
+
+```python
+sum_exp = torch.sum(torch.exp(tmp), dim=-1, keepdim=True)   # (8, 1)
+loss = (torch.log(sum_exp) - Ui_x).mean()
+```
+
+`(8,1)` 减 `(8,)` 广播成 `(8,8)` 的矩阵，`.mean()` 仍然等于正确答案：全部配对求平均时 `mean_ij(L_i − U_j) = mean_i L_i − mean_j U_j`，和成对相减的均值相同。
+
+三阶输入会走另一套广播。`(B,T,V)` 的 `sum_exp` 是 `(B,T,1)`，`Ui_x` 是 `(B,T)`，右对齐后 `(B,T,1)` 对 `(1,B,T)`，中间的 `T` 和 `B` 对不上就报错，除非 `T == B`。手册要求处理额外批次维，去掉 `keepdim`、或者让 `Ui_x` 留住末维，都能避开这个广播。
+
+测试第二段把输入乘 1000，先减最大值把 `exp` 的输入拉回 0 附近，结果和 `F.cross_entropy` 相差在 1e-4 以内。
+
 ## adapters
 
-Linear、Embedding、RMSNorm 三个 adapter 构造后装权重，属性名和参考 key 对上，写错时报 `Missing key(s) in state_dict: "weight"`。SwiGLU 用 `.data` 直接赋值（`tests/adapters.py:93`），SiLU 直接调函数（`:421`）。MHA 的两个 adapter 装四份投影权重，带 RoPE 的那个多构造一个 rope 对象。Block 和 LM 都是一句 `load_state_dict(weights)` 装完（`:299`、`:383`）。
+Linear、Embedding、RMSNorm 三个 adapter 构造后装权重，属性名和参考 key 对上，写错时报 `Missing key(s) in state_dict: "weight"`。`run_cross_entropy` 一句接线，把输入和目标原样传给 `cross_entropy`（`tests/adapters.py:482`）。SwiGLU 用 `.data` 直接赋值（`tests/adapters.py:93`），SiLU 直接调函数（`:421`）。MHA 的两个 adapter 装四份投影权重，带 RoPE 的那个多构造一个 rope 对象。Block 和 LM 都是一句 `load_state_dict(weights)` 装完（`:299`、`:383`）。
 
 ## 下一步
 
-模型部分完成。剩下 `nn_utils.py` 的 cross_entropy 和 gradient_clipping、`optimizer.py`、`data.py`、`serialization.py`。
+模型和交叉熵完成。剩下 `nn_utils.py` 的 gradient_clipping、`optimizer.py`、`data.py`、`serialization.py`。
