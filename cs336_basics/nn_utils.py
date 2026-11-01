@@ -20,7 +20,7 @@ def cross_entropy(logits: Tensor, target: Tensor) -> Tensor:
     """
     tmp = logits - logits.max(dim=-1, keepdim=True).values
 
-    Ui_x = tmp.gather(-1, target.unsqueeze(-1)).squeeze(-1)
+    Ui_x = tmp.gather(-1, target.unsqueeze(-1))
     sum_exp = torch.sum(torch.exp(tmp), dim=-1, keepdim=True)
 
     loss = (torch.log(sum_exp) - Ui_x).mean()

@@ -219,21 +219,18 @@ Ui_x = tmp[target]                                       # (8, 5)，取的是整
 要沿最后一维取，index 得和输入同维数：
 
 ```python
-Ui_x = tmp.gather(-1, target.unsqueeze(-1)).squeeze(-1)
-```
-
-`(8,)` 补成 `(8,1)`，取完再降回 `(8,)`。`dim=-1` 表示每个位置在自己的 5 个 logit 里挑一个。
-
-损失写成 log-sum-exp 相减，`log` 和 `exp` 从这两步里合在一起：
-
-```python
+Ui_x = tmp.gather(-1, target.unsqueeze(-1))                 # (8, 1)
 sum_exp = torch.sum(torch.exp(tmp), dim=-1, keepdim=True)   # (8, 1)
 loss = (torch.log(sum_exp) - Ui_x).mean()
 ```
 
-`(8,1)` 减 `(8,)` 广播成 `(8,8)` 的矩阵，`.mean()` 仍然等于正确答案：全部配对求平均时 `mean_ij(L_i − U_j) = mean_i L_i − mean_j U_j`，和成对相减的均值相同。
+`(8,)` 补成 `(8,1)`，`dim=-1` 表示每个位置在自己的 5 个 logit 里挑一个。两侧都停在 `(8,1)`，相减之后 `.mean()` 一次折平。
 
-三阶输入会走另一套广播。`(B,T,V)` 的 `sum_exp` 是 `(B,T,1)`，`Ui_x` 是 `(B,T)`，右对齐后 `(B,T,1)` 对 `(1,B,T)`，中间的 `T` 和 `B` 对不上就报错，除非 `T == B`。手册要求处理额外批次维，去掉 `keepdim`、或者让 `Ui_x` 留住末维，都能避开这个广播。
+中间一版在 gather 后面接了 `.squeeze(-1)`，`Ui_x` 回到 `(8,)`。`(8,1)` 减 `(8,)` 广播成 `(8,8)`，`.mean()` 仍是 1.6094727516：全部配对求平均满足 `mean_ij(L_i − U_j) = mean_i L_i − mean_j U_j`，和成对相减的均值相同。测试只喂 `(8,5)`，这一层看不出来。
+
+`(B,T,V)` 的输入会撞上同一处广播。`sum_exp` 是 `(B,T,1)`，`Ui_x` 是 `(B,T)`，右对齐后 `(B,T,1)` 对 `(1,B,T)`，中间的 `T` 和 `B` 对不上直接报错，除非 `T == B`。手册 3.2 节要求处理额外的批次维，最后去掉 squeeze，两边同形。
+
+`log` 与 `exp` 的相消落在 log-sum-exp 里，`log` 之前没有单独的 `softmax`。
 
 测试第二段把输入乘 1000，先减最大值把 `exp` 的输入拉回 0 附近，结果和 `F.cross_entropy` 相差在 1e-4 以内。
 
