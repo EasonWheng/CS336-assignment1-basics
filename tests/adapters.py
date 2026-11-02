@@ -15,7 +15,7 @@ from cs336_basics.model import (Linear,
                                 scaled_dot_product_attention, MultiHeadSelfAttention,
                                 TransformerBlock, TransformerLM)
 from cs336_basics.nn_utils import cross_entropy
-from cs336_basics.optimizer import AdamW
+from cs336_basics.optimizer import AdamW, learning_rate_schedule
 
 
 def run_linear(
@@ -527,7 +527,11 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    raise NotImplementedError
+    return learning_rate_schedule(
+        it,
+        max_learning_rate,
+        min_learning_rate,
+        warmup_iters,cosine_cycle_iters)
 
 
 def run_save_checkpoint(

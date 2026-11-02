@@ -1,4 +1,5 @@
 # AdamW, cosine schedule
+import math
 
 import torch
 from torch import Tensor
@@ -102,3 +103,24 @@ def calc_flops(vocab_size: int,
     :return:
     """
     return 3 * count_matmul_FLOPs(d_model, num_layers, d_ff, vocab_size, context_len) * batch_size
+
+
+def learning_rate_schedule(t, a_max, a_min, Tw, Tc):
+    """
+    第 t 次迭代的学习率定义为：
+    预热（Warm-up）：若 t < Tw，则 α_t = (t / Tw) αmax。
+    余弦退火（Cosine annealing）：若 Tw ≤ t ≤ Tc，则 α_t = αmin + (1/2)(1 + cos((t − Tw)/(Tc − Tw) · π))(αmax − αmin)。
+    退火后（Post-annealing）：若 t > Tc，则 α_t = αmin。
+    :param t:
+    :param a_max:
+    :param a_min:
+    :param Tw:
+    :param Tc:
+    :return:
+    """
+    if t < Tw:
+        return a_max * (t / Tw)
+    elif Tw <= t <= Tc:
+        return a_min + 0.5 * (1 + math.cos((t - Tw) / (Tc - Tw) * math.pi)) * (a_max - a_min)
+    else:
+        return a_min

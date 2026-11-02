@@ -1,4 +1,4 @@
-2026-11-01 · test_adamw 通过，优化器部分随 4.2–4.4 增补
+2026-11-01 · test_adamw 与 test_get_lr_cosine_schedule 通过，优化器部分随 4.2–4.4 增补
 
 ## 学习率
 
@@ -66,6 +66,23 @@ p.data -= alpha_t * m / (v ** 0.5 + eps)     # 旧的 m、v
 
 第一步 `m`、`v` 都是 0，更新量 `alpha_t * 0 / (0 + eps)` 是 0，参数原地不动；后面每一步都用前一步的矩，整体滞后一拍。1000 步跑完 6 个权重里有 2 个对不上，最大绝对差 2.96e-4，超过 1e-4 的容差。写完 state 之后重新取值再更新，测试通过。
 
+## 余弦学习率调度
+
+`optimizer.py:108`。`t < Tw` 时线性上升到 `a_max`。从 `Tw` 到 `Tc` 按余弦降到 `a_min`，`Tc` 之后保持 `a_min`。
+
+```python
+if t < Tw:
+    return a_max * (t / Tw)
+elif Tw <= t <= Tc:
+    return a_min + 0.5 * (1 + math.cos((t - Tw) / (Tc - Tw) * math.pi)) * (a_max - a_min)
+else:
+    return a_min
+```
+
+两段能接上。`t = Tw` 时角度是 0，`cos` 取 1，代进去得 `a_min + (a_max - a_min) = a_max`；`t = Tc` 时角度 π，`cos` 取 −1，剩 `a_min`。
+
+测试用 `a_max=1, a_min=0.1, Tw=7, Tc=21`，给了 22 个期望值。逐点跑完最大偏差 2.8e-17。`t=0` 是 0，`t=7` 是 1.0，`t=21` 回到 0.1，`t=22` 往后都是 0.1。
+
 ## AdamW 训练核算
 
 `optimizer.py` 里两个核算函数，`resource_AdamW` 和 `calc_flops`，不参与训练。
@@ -82,4 +99,4 @@ p.data -= alpha_t * m / (v ** 0.5 + eps)     # 旧的 m、v
 
 作业实际训练用的是 7.2 节的小配置：4 层、16 头、`d_model=512`、`d_ff=1344`、词表 10000、上下文 256、1700 万参数、3.28 亿 token，B200 上 20–30 分钟。低资源版本砍到 4000 万 token，CPU 约 1 小时 22 分。
 
-剩下的部分是 4.1 的 `clip_gradients`、4.4 的 `lr_cosine_schedule`、5.1 的 `get_batch`、5.2 的两个 checkpoint 函数。
+剩下四个：`clip_gradients`、`get_batch`、`save_checkpoint`、`load_checkpoint`。
