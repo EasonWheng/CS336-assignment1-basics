@@ -4,6 +4,9 @@ import torch
 from torch import Tensor
 from einops import rearrange, einsum
 
+from cs336_basics.model import count_matmul_FLOPs
+
+
 class AdamW(torch.optim.Optimizer):
     def __init__(self, params,
                  lr=1e-3,
@@ -49,3 +52,53 @@ class AdamW(torch.optim.Optimizer):
                 p.data -= alpha_t * m / (v ** 0.5 + eps)
 
         return loss
+
+
+def storage_AdamW(vocab_size: int,
+                   context_len: int,
+                   num_layers: int,
+                   d_model: int,
+                   num_heads: int):
+    """
+    h = storage_AdamW(
+          vocab_size=50257,
+          context_len=1024,
+          num_layers=48,
+          d_model=1600,
+          num_heads=25,
+          )
+
+    print(h(batch_size=1))
+    请注意：本函数返回单位为GB
+    """
+    def h(batch_size):
+        return (num_layers * (56 / 3 * batch_size * context_len * d_model + 2 * batch_size * num_heads * context_len ** 2)
+                + batch_size * context_len * d_model + batch_size * context_len * vocab_size + batch_size * context_len
+                + ((2 * d_model + 12 * d_model ** 2) * num_layers + d_model + 2 * d_model * vocab_size) * 4) * 4 / 1e9
+    return h
+
+
+def FLOPs_AdamW(vocab_size: int,
+                   num_layers: int,
+                   d_model: int):
+    return ((2 * d_model + 12 * d_model ** 2) * num_layers + d_model + 2 * d_model * vocab_size) * 14
+
+
+def calc_flops(vocab_size: int,
+               num_layers: int,
+               d_model: int,
+               d_ff: int,
+               context_len: int,
+               batch_size: int):
+    """
+    print(calc_flops(50257, 48, 1600, 8/3*1600, 1024, 1024) * 400_000 / (495 * 0.5) / 1e12 / 60 /60 /24)
+    GPT_2 XL要201.5075449133109天
+    :param vocab_size:
+    :param num_layers:
+    :param d_model:
+    :param d_ff:
+    :param context_len:
+    :param batch_size:
+    :return:
+    """
+    return 3 * count_matmul_FLOPs(d_model, num_layers, d_ff, vocab_size, context_len) * batch_size
