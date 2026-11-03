@@ -202,3 +202,19 @@ YAML 的 `1e-3` 解析成字符串。配置里写成 `1.0e-3`，`yaml.safe_load`
 
 `toknizer_params/` 里只有 TinyStories 的词表与合并文件。训练脚本消费 `data/train.npy` 与 `data/val.npy`，这两个文件由分词脚本生成。
 
+## 数据分词
+
+`scripts/tokenize_data.py`。分词器用 `Tokenizer.from_files` 构造，传入 `toknizer_params/vocab_TinyStoriesV2-GPT4.json`、`merges_TinyStoriesV2-GPT4.json` 与 `special_tokens=["<|endoftext|>"]`。合并文件一行一个 JSON 数组，`load_tokenizer` 逐行解析；直接对合并文件调用 `json.load` 会抛出 `Extra data`。
+
+文本以 `utf-8` 编码打开，文件对象交给 `encode_iterable`。这个方法按行接收字符串，内部保留缓冲区，处理行边界与特殊 token。返回生成器，必须在 `with` 块内消费；块外再遍历会抛出 `ValueError: I/O operation on closed file`。
+
+ID 用 `array.array("H")` 累积，每个元素占 2 字节。编码结束后用 `np.frombuffer(ids, dtype=np.uint16)` 转成 NumPy 数组，调用 `np.save` 写入 `data/train.npy` 与 `data/val.npy`。`configs/tinystories.yaml` 的 `train_data` 与 `val_data` 指向这两个文件。
+
+`f.read()` 传给 `encode_iterable` 会按字符遍历整个字符串，缓冲区反复处理，复杂度接近平方；大文件必须传入文件对象。
+
+`if __name__ == "main"` 的判断永远为假，Python 的入口名是 `"__main__"`。`import array` 之后调用 `array("H")` 会抛出 `TypeError: 'module' object is not callable`，构造器是 `array.array`。
+
+分词器产物检查：词表 10000 项，ID 0–9999；合并 9743 对；特殊 token `<|endoftext|>` 的 ID 是 256；0–255 对应单字节；每个合并对的两部分在合并时已经存在，9743 个结果全部在词表里，没有重复；词表等于基础字节、合并结果与特殊 token 的并集。最长 token 是 `b' accomplishment'`，15 字节，ID 7160。
+
+TinyStories 训练集 2.1GB、15,600,056 行，验证集 22MB。OWT 训练集 12GB、94,568,884 行，BPE 训练需要约 100GB 内存，本机 48GB 不够；OWT 分词器使用 32000 词表，属于另一份产物。
+
