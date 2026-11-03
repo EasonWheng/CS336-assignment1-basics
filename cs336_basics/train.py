@@ -1,0 +1,203 @@
+import os
+import torch
+import argparse
+import yaml
+from torch import Tensor
+from cs336_basics.tokenizer import train_bpe, Tokenizer
+from cs336_basics.model import (Linear,
+                                Embedding, RMSNorm, SiLU,
+                                SwiGLU, RotaryPositionalEmbedding, softmax,
+                                scaled_dot_product_attention, MultiHeadSelfAttention,
+                                TransformerBlock, TransformerLM)
+from cs336_basics.nn_utils import cross_entropy, gradient_clipping
+from cs336_basics.optimizer import AdamW, learning_rate_schedule
+from cs336_basics.data import get_batch
+from cs336_basics.serialization import save_checkpoint, load_checkpoint
+
+
+REQUIRED_GROUPS = ("model", "optimizer", "data", "run", "checkpoint")
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, default=r"configs/tinystories.yaml")
+    parser.add_argument("--resume", type=str, default=None)
+    parser.add_argument("--device", type=str, default=None, choices=["cpu", "cuda"])
+    parser.add_argument("--verbose", action="store_true")
+    return parser.parse_args(argv)
+
+
+def load_config(path, args):
+    with open(path, "r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f)
+
+    if not isinstance(raw, dict):
+        raise ValueError(f"配置文件 {path} 不是映射结构")
+
+    missing = [group for group in REQUIRED_GROUPS if group not in raw]
+    if missing:
+        raise ValueError(f"配置文件 {path} 缺少分组: {', '.join(missing)}")
+
+    merged = {}
+    sources = {}
+    duplicates = {}
+    for group in REQUIRED_GROUPS:
+        section = raw[group]
+        if not isinstance(section, dict):
+            raise ValueError(f"配置分组 {group} 不是映射结构")
+        for key, value in section.items():
+            if key in merged:
+                duplicates.setdefault(key, [sources[key]]).append(group)
+            merged[key] = value
+            sources[key] = group
+
+    if duplicates:
+        detail = "; ".join(f"{key} 同时出现在 {' 和 '.join(groups)}"
+                           for key, groups in duplicates.items())
+        raise ValueError(f"配置文件 {path} 存在跨分组重名键: {detail}")
+
+    config = argparse.Namespace(**merged)
+
+    if args.resume is not None:
+        config.resume = args.resume
+    if args.device is not None:
+        config.device = args.device
+    config.verbose = bool(args.verbose) or bool(getattr(config, "verbose", False))
+
+    return config
+
+
+def validate_config(config):
+    errors = []
+
+    def is_int(value):
+        return isinstance(value, int) and not isinstance(value, bool)
+
+    def is_number(value):
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+    positive_ints = [
+        ("vocab_size", "model.vocab_size"),
+        ("context_length", "model.context_length"),
+        ("d_model", "model.d_model"),
+        ("num_layers", "model.num_layers"),
+        ("num_heads", "model.num_heads"),
+        ("d_ff", "model.d_ff"),
+        ("total_steps", "optimizer.total_steps"),
+        ("batch_size", "data.batch_size"),
+        ("eval_batches", "run.eval_batches"),
+        ("log_interval", "run.log_interval"),
+        ("eval_interval", "run.eval_interval"),
+        ("checkpoint_interval", "checkpoint.checkpoint_interval"),
+    ]
+    for attr, label in positive_ints:
+        value = getattr(config, attr, None)
+        if not (is_int(value) and value > 0):
+            errors.append(f"{label} 必须是正整数, 当前为 {value!r}")
+
+    value = getattr(config, "warmup_steps", None)
+    if not (is_int(value) and value >= 0):
+        errors.append(f"optimizer.warmup_steps 必须是非负整数, 当前为 {value!r}")
+
+    value = getattr(config, "seed", None)
+    if not (is_int(value) and value >= 0):
+        errors.append(f"run.seed 必须是非负整数, 当前为 {value!r}")
+
+    positive_numbers = [
+        ("max_lr", "optimizer.max_lr"),
+        ("eps", "optimizer.eps"),
+        ("rope_theta", "model.rope_theta"),
+        ("grad_clip", "optimizer.grad_clip"),
+    ]
+    for attr, label in positive_numbers:
+        value = getattr(config, attr, None)
+        if not (is_number(value) and value > 0):
+            errors.append(f"{label} 必须是正数, 当前为 {value!r}")
+
+    nonnegative_numbers = [
+        ("min_lr", "optimizer.min_lr"),
+        ("weight_decay", "optimizer.weight_decay"),
+    ]
+    for attr, label in nonnegative_numbers:
+        value = getattr(config, attr, None)
+        if not (is_number(value) and value >= 0):
+            errors.append(f"{label} 必须是非负数, 当前为 {value!r}")
+
+    betas = getattr(config, "betas", None)
+    if not (isinstance(betas, (list, tuple)) and len(betas) == 2
+            and all(is_number(b) and 0.0 <= b < 1.0 for b in betas)):
+        errors.append(f"optimizer.betas 必须是两个 [0, 1) 区间的数, 当前为 {betas!r}")
+
+    device = getattr(config, "device", None)
+    if device not in ("cpu", "cuda"):
+        errors.append(f"data.device 必须是 'cpu' 或 'cuda', 当前为 {device!r}")
+    elif device == "cuda":
+        try:
+            import torch
+        except ImportError:
+            errors.append("data.device 为 'cuda', 但当前环境无法导入 torch")
+        else:
+            if not torch.cuda.is_available():
+                errors.append("data.device 为 'cuda', 但 torch.cuda.is_available() 返回 False")
+
+    for attr, label in (("train_data", "data.train_data"), ("val_data", "data.val_data")):
+        value = getattr(config, attr, None)
+        if not isinstance(value, str) or not value:
+            errors.append(f"{label} 必须是非空路径字符串, 当前为 {value!r}")
+        elif not os.path.isfile(value):
+            errors.append(f"{label} 指向的文件不存在: {value}")
+
+    value = getattr(config, "checkpoint_dir", None)
+    if not isinstance(value, str) or not value:
+        errors.append(f"checkpoint.checkpoint_dir 必须是非空路径字符串, 当前为 {value!r}")
+
+    resume = getattr(config, "resume", None)
+    if resume is not None:
+        if not isinstance(resume, str) or not resume:
+            errors.append(f"checkpoint.resume 必须是路径字符串或 null, 当前为 {resume!r}")
+        elif not os.path.isfile(resume):
+            errors.append(f"checkpoint.resume 指向的检查点不存在: {resume}")
+
+    d_model = getattr(config, "d_model", None)
+    num_heads = getattr(config, "num_heads", None)
+    if is_int(d_model) and is_int(num_heads) and num_heads > 0 and d_model > 0:
+        if d_model % num_heads != 0:
+            errors.append(f"model.d_model ({d_model}) 必须能被 model.num_heads ({num_heads}) 整除")
+
+    max_lr = getattr(config, "max_lr", None)
+    min_lr = getattr(config, "min_lr", None)
+    if is_number(max_lr) and is_number(min_lr) and min_lr > max_lr:
+        errors.append(f"optimizer.min_lr ({min_lr}) 不能大于 optimizer.max_lr ({max_lr})")
+
+    warmup_steps = getattr(config, "warmup_steps", None)
+    total_steps = getattr(config, "total_steps", None)
+    if is_int(warmup_steps) and is_int(total_steps) and warmup_steps >= total_steps:
+        errors.append(f"optimizer.warmup_steps ({warmup_steps}) 必须小于 optimizer.total_steps ({total_steps})")
+
+    if errors:
+        raise ValueError("配置校验失败:\n" + "\n".join(f"  - {msg}" for msg in errors))
+
+    return config
+
+
+def load_datasets(config):
+
+
+def build_model(config):
+
+
+def build_optimizer(model, config):
+
+
+def train(config):
+
+
+def evaluate(model, val_data, config):
+
+
+def save_checkpoint_if_due(model, optimizer, iteration, config):
+
+
+def main():
+
+
+if __name__ == "__main__":
