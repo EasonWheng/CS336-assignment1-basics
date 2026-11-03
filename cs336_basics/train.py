@@ -3,13 +3,8 @@ import torch
 import numpy as np
 import argparse
 import yaml
-from torch import Tensor
-from cs336_basics.tokenizer import train_bpe, Tokenizer
-from cs336_basics.model import (Linear,
-                                Embedding, RMSNorm, SiLU,
-                                SwiGLU, RotaryPositionalEmbedding, softmax,
-                                scaled_dot_product_attention, MultiHeadSelfAttention,
-                                TransformerBlock, TransformerLM)
+
+from cs336_basics.model import TransformerLM
 from cs336_basics.nn_utils import cross_entropy, gradient_clipping
 from cs336_basics.optimizer import AdamW, learning_rate_schedule
 from cs336_basics.data import get_batch
@@ -305,6 +300,14 @@ def train(config):
 
 
 def main():
+    args = parse_args()
+    config = load_config(args.config, args)
+    validate_config(config)
+
+    fnl_log = train(config)
+    print(fnl_log)
+
+    return 0
 
 
 if __name__ == "__main__":

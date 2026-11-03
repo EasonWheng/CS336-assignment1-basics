@@ -160,23 +160,25 @@ torch.save(dict_to_save, out)
 
 ## 训练脚本（5.3）
 
-`cs336_basics/train.py`。配置从 YAML 读取，命令行只保留三个参数：`--config`、`--resume`、`--device`。`parse_args` 在 `:21`，`choices` 限制设备取值。
+`cs336_basics/train.py`。配置从 YAML 读取，命令行只保留三个参数：`--config`、`--resume`、`--device`。`parse_args` 在 `:16`，`choices` 限制设备取值。
 
-`load_config`（`:30`）用 `yaml.safe_load` 读取，检查 `model`、`optimizer`、`data`、`run`、`checkpoint` 五个顶层键。合并时记录每个键来自哪个分组，出现重名键直接抛出 `ValueError`；`argparse.Namespace(**merged)` 把 26 个字段变成平铺属性。命令行提供的 `resume` 与 `device` 覆盖文件值。
+`load_config`（`:25`）用 `yaml.safe_load` 读取，检查 `model`、`optimizer`、`data`、`run`、`checkpoint` 五个顶层键。合并时记录每个键来自哪个分组，出现重名键直接抛出 `ValueError`；`argparse.Namespace(**merged)` 把 26 个字段变成平铺属性。命令行提供的 `resume` 与 `device` 覆盖文件值。
 
-`validate_config`（`:70`）把错误收集到列表，最后一次性抛出。正整数 12 项、非负整数 2 项、正数 4 项、非负数 2 项；跨字段检查 `d_model % num_heads == 0`、`min_lr <= max_lr`、`warmup_steps < total_steps`。`device` 为 `cuda` 时调用 `torch.cuda.is_available()`。数据路径与恢复路径用 `os.path.isfile` 检查。`bool` 从整数检查里排除。
+`validate_config`（`:65`）把错误收集到列表，最后一次性抛出。正整数 12 项、非负整数 2 项、正数 4 项、非负数 2 项；跨字段检查 `d_model % num_heads == 0`、`min_lr <= max_lr`、`warmup_steps < total_steps`。`device` 为 `cuda` 时调用 `torch.cuda.is_available()`。数据路径与恢复路径用 `os.path.isfile` 检查。`bool` 从整数检查里排除。
 
-`load_datasets`（`:183`）用 `np.load` 与 `mmap_mode="r"` 返回两个 `np.memmap`，dtype 为 `uint16`。
+`load_datasets`（`:178`）用 `np.load` 与 `mmap_mode="r"` 返回两个 `np.memmap`，dtype 为 `uint16`。
 
-`build_model`（`:189`）按 `TransformerLM` 的构造顺序传入 `d_model`、`num_heads`、`d_ff`、`vocab_size`、`context_length`、`num_layers`、`rope_theta`、`device`。`build_optimizer`（`:201`）创建 `AdamW`，学习率取 `config.max_lr`。
+`build_model`（`:184`）按 `TransformerLM` 的构造顺序传入 `d_model`、`num_heads`、`d_ff`、`vocab_size`、`context_length`、`num_layers`、`rope_theta`、`device`。`build_optimizer`（`:196`）创建 `AdamW`，学习率取 `config.max_lr`。
 
-`save_checkpoint_if_due`（`:210`）用 `os.path.join` 把目录与 `checkpoint_{iteration}.pt` 拼成文件路径，`os.makedirs(..., exist_ok=True)` 创建目录，调用 `save_checkpoint`，返回路径。调用点按 `checkpoint_interval` 判断，循环结束后再无条件保存一次。
+`save_checkpoint_if_due`（`:205`）用 `os.path.join` 把目录与 `checkpoint_{iteration}.pt` 拼成文件路径，`os.makedirs(..., exist_ok=True)` 创建目录，调用 `save_checkpoint`，返回路径。调用点按 `checkpoint_interval` 判断，循环结束后再无条件保存一次。
 
-`load_checkpoint_if_needed`（`:218`）在 `config.resume` 为 `None` 时返回 0；有路径时调用 `load_checkpoint`，返回保存的 iteration。
+`load_checkpoint_if_needed`（`:213`）在 `config.resume` 为 `None` 时返回 0；有路径时调用 `load_checkpoint`，返回保存的 iteration。
 
-`evaluate`（`:225`）在 `model.eval()` 与 `torch.no_grad()` 下运行 `eval_batches` 个批次，累加 `cross_entropy` 的 `.item()`，除以批次数量，最后切回 `model.train()`，返回 Python 浮点数。
+`evaluate`（`:220`）在 `model.eval()` 与 `torch.no_grad()` 下运行 `eval_batches` 个批次，累加 `cross_entropy` 的 `.item()`，除以批次数量，最后切回 `model.train()`，返回 Python 浮点数。
 
-`train`（`:243`）先设置 `torch.manual_seed` 与 `np.random.seed`，加载数据、创建模型与优化器、恢复检查点。每一步按顺序执行：写入学习率、取批次、清零梯度、前向传播、交叉熵、反向传播、梯度裁剪、优化器更新。验证、检查点、日志分别按三个间隔触发。训练结束保存最终检查点，返回 `iteration`、`last_train_loss`、`last_val_loss`、两个历史列表、`last_checkpoint` 与 `paths`。
+`train`（`:238`）先设置 `torch.manual_seed` 与 `np.random.seed`，加载数据、创建模型与优化器、恢复检查点。每一步按顺序执行：写入学习率、取批次、清零梯度、前向传播、交叉熵、反向传播、梯度裁剪、优化器更新。验证、检查点、日志分别按三个间隔触发。训练结束保存最终检查点，返回 `iteration`、`last_train_loss`、`last_val_loss`、两个历史列表、`last_checkpoint` 与 `paths`。
+
+`main`（`:302`）按顺序调用 `parse_args`、`load_config`、`validate_config`、`train`，打印返回的指标字典。配置错误以 `ValueError` 回溯结束。
 
 ### 踩过的坑
 
