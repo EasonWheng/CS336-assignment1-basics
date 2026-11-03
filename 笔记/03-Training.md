@@ -1,5 +1,3 @@
-2026-11-03 · train.py 的配置层完成，导入检查未通过（空函数体），训练循环尚未实现
-
 2026-11-01 · test_adamw、test_get_lr_cosine_schedule、test_gradient_clipping、test_get_batch、test_checkpointing 通过，训练部分随 4.1–5.2 增补
 
 ## 学习率
@@ -158,7 +156,7 @@ torch.save(dict_to_save, out)
 
 作业实际训练用的是 7.2 节的小配置：4 层、16 头、`d_model=512`、`d_ff=1344`、词表 10000、上下文 256、1700 万参数、3.28 亿 token，B200 上 20–30 分钟。低资源版本缩减到 4000 万 token，CPU 约 1 小时 22 分。
 
-测试适配器全部接入完成。5.3 的配置层已建立，训练循环与第 6 节的生成待完成。
+测试适配器全部接入完成。剩下 5.3 的训练脚本和第 6 节的生成。
 
 ## 训练脚本（5.3）
 
@@ -174,18 +172,3 @@ torch.save(dict_to_save, out)
 
 `toknizer_params/` 里只有 TinyStories 的词表与合并文件。`scripts/tokenize_data.py` 仍是空文件，`data/train.npy` 与 `data/val.npy` 还没有生成，`validate_config` 的文件检查会在这里失败。
 
-## 待修
-
-`train.py:162` 起的七个函数只有定义没有函数体，`if __name__ == "__main__":` 后面也没有语句，导入时报 `IndentationError`。测试 `parse_args`、`load_config`、`validate_config` 之前先补占位语句。
-
-`train.py:52` 读取 `verbose`，`parse_args` 没有定义 `--verbose`，取到的永远是 `False`。
-
-`train.py:106` 把 `grad_clip` 放进非负检查，允许取 0。裁剪系数为 0 时全部梯度归零。
-
-`train.py:118` 没有检查 `cuda` 是否可用，设备字符串合法但显卡不存在时，创建模型才会失败。
-
-`train.py:44` 的 `merged.update` 在五个分组出现重名键时静默覆盖。
-
-`validate_config` 抛出的 `ValueError` 还没有在 `main` 里捕获。
-
-下一步是实现 `load_datasets`、`build_model`、`build_optimizer`、`train`、`evaluate`、`save_checkpoint_if_due` 与 `main`。
