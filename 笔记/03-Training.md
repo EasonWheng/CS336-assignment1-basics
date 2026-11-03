@@ -1,4 +1,4 @@
-2026-11-01 · test_adamw、test_get_lr_cosine_schedule、test_gradient_clipping 通过，训练部分随 4.1–4.4 增补
+2026-11-01 · test_adamw、test_get_lr_cosine_schedule、test_gradient_clipping、test_get_batch 通过，训练部分随 4.1–5.1 增补
 
 ## 学习率
 
@@ -104,6 +104,25 @@ for p in parameters:
 
 和 `torch.nn.utils.clip_grad_norm_` 对拍，6 个参数、`max_l2_norm=1e-2`，逐位相同，`max diff 0.0`。五个未冻结的参数各 `0.004472`，总范数 `√5 × 0.004472 = 0.01`。
 
+## 数据批次
+
+`data.py:7`。测试在 `tests/test_data.py`。
+
+```python
+starts = np.random.randint(0, len(dataset) - context_length, size=batch_size)
+idx = starts[:, None] + np.arange(context_length)
+x = torch.as_tensor(dataset[idx], device=device).long()
+y = torch.as_tensor(dataset[idx + 1], device=device).long()
+```
+
+`randint` 的 `high` 是排他的，最大起点为 `len - context_length - 1`，`y` 的最后一个 token 恰好落在数组末尾。测试用 `arange(100)` 和 `context_length=7`，起点要覆盖到 92；写成 `len - context_length - 1` 当 `high` 只能到 91。
+
+`y` 是 `x` 往后挪一位：`x` 取 `data[i:i+L]`，`y` 取 `data[i+1:i+L+1]`，索引矩阵加一即可。
+
+`as_tensor` 的 `device` 参数让张量创建时直接落在目标设备上，不经过先建 CPU 张量再 `.to()`。分词数据是 `uint16`，embedding 的索引要 int64，后面接一个 `.long()`。测试传 `"cuda:99"` 时要求抛错，`device` 没真正用上就过不了。
+
+还有一段统计检查：1000 轮、每轮 32 条，每个起点出现的次数要落在 `1000×32/93` 的 ±5σ 内，固定批次或只取前几个窗口都会挂。
+
 ## AdamW 训练核算
 
 `optimizer.py` 里两个核算函数，`resource_AdamW` 和 `calc_flops`，不参与训练。
@@ -120,4 +139,4 @@ for p in parameters:
 
 作业实际训练用的是 7.2 节的小配置：4 层、16 头、`d_model=512`、`d_ff=1344`、词表 10000、上下文 256、1700 万参数、3.28 亿 token，B200 上 20–30 分钟。低资源版本砍到 4000 万 token，CPU 约 1 小时 22 分。
 
-剩下 `get_batch` 和两个 checkpoint 函数。
+剩下两个 checkpoint 函数。
