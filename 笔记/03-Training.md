@@ -1,4 +1,4 @@
-2026-11-01 · test_adamw 与 test_get_lr_cosine_schedule 通过，优化器部分随 4.2–4.4 增补
+2026-11-01 · test_adamw、test_get_lr_cosine_schedule、test_gradient_clipping 通过，训练部分随 4.1–4.4 增补
 
 ## 学习率
 
@@ -83,6 +83,27 @@ else:
 
 测试用 `a_max=1, a_min=0.1, Tw=7, Tc=21`，给了 22 个期望值。逐点跑完最大偏差 2.8e-17。`t=0` 是 0，`t=7` 是 1.0，`t=21` 回到 0.1，`t=22` 往后都是 0.1。
 
+## 梯度裁剪
+
+`nn_utils.py:29`。测试在 `tests/test_nn_utils.py:60`，6 个 5×5 的参数，最后一个 `requires_grad_(False)`。
+
+```python
+parameters = list(parameters)
+total = sum((p.grad ** 2).sum() for p in parameters if p.grad is not None) ** 0.5
+clip_coef = min(max_l2_norm / (total + 1e-6), 1.0)
+for p in parameters:
+    if p.grad is not None:
+        p.grad.mul_(clip_coef)
+```
+
+第一版写成 `sum(p.grad ** 2 for p in parameters) ** 0.5`。`sum` 加的是张量，逐元素相加之后还是张量，`** 0.5` 又逐元素开方，两个 5×5 的梯度得到 5×5 的结果。要每个参数先 `.sum()` 归约成 0 维再相加。
+
+第二版写成 `parameters.data.mul_(clip_coef)`，`parameters` 是 `Iterable`，测试传元组，报 `AttributeError: 'tuple' object has no attribute 'data'`；那里即使有 `.data`，改的也是参数本身。
+
+第三版漏了 `if p.grad is not None`，冻结参数的 `p.grad` 是 `None`，`None ** 2` 报 `TypeError`。`parameters` 还会被遍历两次，传生成器时第二遍是空的，开头 `list(parameters)` 一并解决。
+
+和 `torch.nn.utils.clip_grad_norm_` 对拍，6 个参数、`max_l2_norm=1e-2`，逐位相同，`max diff 0.0`。五个未冻结的参数各 `0.004472`，总范数 `√5 × 0.004472 = 0.01`。
+
 ## AdamW 训练核算
 
 `optimizer.py` 里两个核算函数，`resource_AdamW` 和 `calc_flops`，不参与训练。
@@ -99,4 +120,4 @@ else:
 
 作业实际训练用的是 7.2 节的小配置：4 层、16 头、`d_model=512`、`d_ff=1344`、词表 10000、上下文 256、1700 万参数、3.28 亿 token，B200 上 20–30 分钟。低资源版本砍到 4000 万 token，CPU 约 1 小时 22 分。
 
-剩下四个：`clip_gradients`、`get_batch`、`save_checkpoint`、`load_checkpoint`。
+剩下 `get_batch` 和两个 checkpoint 函数。

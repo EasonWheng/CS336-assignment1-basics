@@ -108,9 +108,10 @@ def calc_flops(vocab_size: int,
 def learning_rate_schedule(t, a_max, a_min, Tw, Tc):
     """
     第 t 次迭代的学习率定义为：
-    预热（Warm-up）：若 t < Tw，则 α_t = (t / Tw) αmax。
-    余弦退火（Cosine annealing）：若 Tw ≤ t ≤ Tc，则 α_t = αmin + (1/2)(1 + cos((t − Tw)/(Tc − Tw) · π))(αmax − αmin)。
-    退火后（Post-annealing）：若 t > Tc，则 α_t = αmin。
+
+    - 预热（Warm-up）：若 t < Tw，则 α_t = (t / Tw) αmax。
+    - 余弦退火（Cosine annealing）：若 Tw ≤ t ≤ Tc，则 α_t = αmin + (1/2)(1 + cos((t − Tw)/(Tc − Tw) · π))(αmax − αmin)。
+    - 退火后（Post-annealing）：若 t > Tc，则 α_t = αmin。
     :param t:
     :param a_max:
     :param a_min:

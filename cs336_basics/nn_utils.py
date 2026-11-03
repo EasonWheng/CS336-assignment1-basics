@@ -2,8 +2,7 @@
 
 from torch import Tensor
 import torch
-from einops import rearrange, einsum
-from .model import softmax
+from collections.abc import Iterable
 
 def cross_entropy(logits: Tensor, target: Tensor) -> Tensor:
     """
@@ -25,3 +24,19 @@ def cross_entropy(logits: Tensor, target: Tensor) -> Tensor:
 
     loss = (torch.log(sum_exp) - Ui_x).mean()
     return loss
+
+
+def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float):
+    """
+    梯度裁剪的函数。函数接收参数列表和最大 ℓ2 范数，**原地修改** 每个参数的梯度。使用 ε = 10⁻⁶（PyTorch 默认值）。
+    :param parameters:
+    :param max_l2_norm:
+    :return:
+    """
+    parameters = list(parameters)
+    total = sum((p.grad ** 2).sum() for p in parameters if p.grad is not None) ** 0.5   # ǁgǁ₂
+    clip_coef = min(max_l2_norm / (total + 1e-6), 1.0)
+    for p in parameters:
+        if p.grad is not None:
+            p.grad.mul_(clip_coef)
+
