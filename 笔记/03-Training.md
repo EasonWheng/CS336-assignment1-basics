@@ -1,4 +1,4 @@
-2026-11-01 · test_adamw、test_get_lr_cosine_schedule、test_gradient_clipping、test_get_batch 通过，训练部分随 4.1–5.1 增补
+2026-11-01 · test_adamw、test_get_lr_cosine_schedule、test_gradient_clipping、test_get_batch、test_checkpointing 通过，训练部分随 4.1–5.2 增补
 
 ## 学习率
 
@@ -123,6 +123,25 @@ y = torch.as_tensor(dataset[idx + 1], device=device).long()
 
 还有一段统计检查：1000 轮、每轮 32 条，每个起点出现的次数要落在 `1000×32/93` 的 ±5σ 内，固定批次或只取前几个窗口都会挂。
 
+## 检查点
+
+`serialization.py:9` 和 `:44`。测试跑三层 MLP 加 AdamW 十步，存到 `tmp_path/checkpoint.pt`，再新建一组模型和优化器读回来，逐参数比对。
+
+```python
+dict_to_save = {
+    "model": model.state_dict(),
+    "optimizer": optimizer.state_dict(),
+    "iteration": iteration,
+}
+torch.save(dict_to_save, out)
+```
+
+存 `state_dict()`，不存模块对象。`torch.save(model)` 会把这个模块整体序列化，读的时候要求类定义完全对得上；`state_dict()` 是普通字典，`load_state_dict` 会检查键和形状，少一项就报 `Missing key(s) in state_dict`。
+
+优化器的 `state_dict` 有两部分：`param_groups` 存超参，`state` 存每个参数的 `m`、`v`、`t`。只存模型的话，恢复之后矩估计全丢，前几步的更新会偏。
+
+返回的迭代次数用来接上余弦调度的 `t` 和日志里的横轴。`torch.save`、`torch.load` 都收路径或类文件对象，测试传的是路径，训练脚本里也可以传 `io.BytesIO`。
+
 ## AdamW 训练核算
 
 `optimizer.py` 里两个核算函数，`resource_AdamW` 和 `calc_flops`，不参与训练。
@@ -139,4 +158,4 @@ y = torch.as_tensor(dataset[idx + 1], device=device).long()
 
 作业实际训练用的是 7.2 节的小配置：4 层、16 头、`d_model=512`、`d_ff=1344`、词表 10000、上下文 256、1700 万参数、3.28 亿 token，B200 上 20–30 分钟。低资源版本砍到 4000 万 token，CPU 约 1 小时 22 分。
 
-剩下两个 checkpoint 函数。
+测试适配器全部接完。剩下 5.3 的训练脚本和第 6 节的生成。
