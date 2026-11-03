@@ -210,6 +210,22 @@ YAML 的 `1e-3` 解析成字符串。配置里写成 `1.0e-3`，`yaml.safe_load`
 
 ID 用 `array.array("H")` 累积，每个元素占 2 字节。编码结束后用 `np.frombuffer(ids, dtype=np.uint16)` 转成 NumPy 数组，调用 `np.save` 写入 `data/train.npy` 与 `data/val.npy`。`configs/tinystories.yaml` 的 `train_data` 与 `val_data` 指向这两个文件。
 
+### API 用法
+
+| API | 作用 | 参数与返回 |
+| --- | --- | --- |
+| `Tokenizer.from_files(vocab, merges, special_tokens=None)` | 读取词表与合并文件，构造分词器 | 类方法；返回 `Tokenizer` |
+| `encode_iterable(iterable)` | 流式编码 | 参数是字符串的可迭代对象；返回生成器，逐个产出整数 |
+| `encode(text)` | 编码单个字符串 | 返回 `list[int]` |
+| `array.array("H")` | 动态整数缓冲区 | 每个元素占 2 字节；`extend` 批量追加 |
+| `np.frombuffer(buffer, dtype=np.uint16)` | 把缓冲区解释成数组 | 不复制数据；返回与缓冲区共享内存的 `ndarray` |
+| `np.save(path, array)` | 写入 `.npy` 文件 | 路径没有 `.npy` 后缀时自动追加；保存 dtype 与形状 |
+| `np.load(path, mmap_mode="r")` | 读取 `.npy` 文件 | 返回 `np.memmap`，按需读取磁盘 |
+
+`np.frombuffer` 返回视图，与缓冲区共享内存。修改返回数组会修改原缓冲区；玩具验证：`b[0] = 9` 之后 `array.array` 的第一个元素也变成 9。传入 `bytes` 时视图只读，传入 `array.array` 时可写。
+
+`np.save` 写入 `.npy` 头与二进制数据，`np.load` 从头里读出 dtype 与形状。刚才验证：`np.save("x", arr)` 生成 `x.npy`，`np.load("x.npy", mmap_mode="r")` 返回 `memmap`，dtype 为 `uint16`，形状与保存前一致。
+
 `f.read()` 传给 `encode_iterable` 会按字符遍历整个字符串，缓冲区反复处理，复杂度接近平方；大文件必须传入文件对象。
 
 `if __name__ == "main"` 的判断永远为假，Python 的入口名是 `"__main__"`。`import array` 之后调用 `array("H")` 会抛出 `TypeError: 'module' object is not callable`，构造器是 `array.array`。
