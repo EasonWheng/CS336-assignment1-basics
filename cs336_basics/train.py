@@ -1,5 +1,6 @@
 import os
 import torch
+import numpy as np
 import argparse
 import yaml
 from torch import Tensor
@@ -180,24 +181,131 @@ def validate_config(config):
 
 
 def load_datasets(config):
+    train_dataset = np.load(config.train_data, mmap_mode="r")
+    val_dataset = np.load(config.val_data, mmap_mode="r")
+    return train_dataset, val_dataset
 
 
 def build_model(config):
+    model = TransformerLM(config.d_model,
+                          config.num_heads,
+                          config.d_ff,
+                          config.vocab_size,
+                          config.context_length,
+                          config.num_layers,
+                          config.rope_theta,
+                          config.device)
+    return model
 
 
 def build_optimizer(model, config):
-
-
-def train(config):
-
-
-def evaluate(model, val_data, config):
+    optimizer = AdamW(model.parameters(),
+                      config.max_lr,
+                      config.betas,
+                      config.eps,
+                      config.weight_decay)
+    return optimizer
 
 
 def save_checkpoint_if_due(model, optimizer, iteration, config):
+    path = os.path.join(config.checkpoint_dir, f"checkpoint_{iteration}.pt")
+    os.makedirs(config.checkpoint_dir, exist_ok=True)
+    save_checkpoint(model, optimizer, iteration, path)
+
+    return path
+
+
+def load_checkpoint_if_needed(model, optimizer, config):
+    if config.resume is None:
+        return 0
+    path = config.resume
+    return load_checkpoint(path, model, optimizer)
+
+
+def evaluate(model, val_data, config):
+    batch_size = config.batch_size
+    context_length = config.context_length
+    device = config.device
+
+    model.eval()
+    with torch.no_grad():
+        loss = 0
+        for _ in range(config.eval_batches):
+            input_tensor, target_tensor = get_batch(val_data, batch_size, context_length, device)
+            logits = model(input_tensor)
+            loss += cross_entropy(logits, target_tensor).item()
+        average_val_loss = loss / config.eval_batches
+    model.train()
+
+    return average_val_loss
+
+
+def train(config):
+    torch.manual_seed(config.seed)
+    np.random.seed(config.seed)
+
+    train_dataset, val_dataset = load_datasets(config)
+    model = build_model(config)
+    optimizer = build_optimizer(model, config)
+    iteration = load_checkpoint_if_needed(model, optimizer, config) # 如果有的话这里会恢复model
+    device = config.device
+
+    train_loss_acc = 0
+    last_train_loss = None
+    train_loss_history = []
+    last_val_loss = None
+    val_loss_history = []
+    paths = []
+    iteration_i = 0
+
+    model.train()
+    for i in range(iteration, config.total_steps):
+        lr = learning_rate_schedule(i, config.max_lr, config.min_lr, config.warmup_steps, config.total_steps)
+        for group in optimizer.param_groups:
+            group['lr'] = lr
+        input_seq, target_seq = get_batch(train_dataset, config.batch_size, config.context_length, device=device)
+        optimizer.zero_grad(set_to_none=True)
+        logits = model(input_seq)
+        loss = cross_entropy(logits, target_seq)
+        loss.backward()     # 计算梯度
+        gradient_clipping(model.parameters(), config.grad_clip)
+        optimizer.step()
+        last_train_loss = loss.item()
+        train_loss_acc += last_train_loss
+
+        iteration_i += 1
+
+        if  (i + 1) % config.eval_interval == 0:
+            val_loss = evaluate(model, val_dataset, config)
+            print(f"当前val_loss = {val_loss}", flush=True)
+            val_loss_history.append(val_loss)
+            last_val_loss = val_loss
+
+        if (i + 1) % config.checkpoint_interval == 0:
+            paths.append(save_checkpoint_if_due(model, optimizer, i + 1, config))
+
+        if (i + 1) % config.log_interval == 0:
+            average_train_loss = train_loss_acc / iteration_i
+            train_loss_history.append(average_train_loss)
+            # 打印日志
+            print(f"该评估区间的平均训练train_loss: {train_loss_acc / iteration_i}", flush=True)
+            train_loss_acc, iteration_i = 0, 0
+
+    path = save_checkpoint_if_due(model, optimizer, config.total_steps, config)
+
+    return {
+        "iteration": config.total_steps,
+        "last_train_loss": last_train_loss,
+        "last_val_loss": last_val_loss,
+        "train_history": train_loss_history,
+        "val_history": val_loss_history,
+        "last_checkpoint": path,
+        "paths": paths
+    }
 
 
 def main():
 
 
 if __name__ == "__main__":
+    main()

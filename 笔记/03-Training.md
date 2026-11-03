@@ -160,15 +160,43 @@ torch.save(dict_to_save, out)
 
 ## 训练脚本（5.3）
 
-`cs336_basics/train.py:20`。`parse_args` 只保留三个参数：`--config` 默认 `configs/tinystories.yaml`，`--resume` 默认 `None`，`--device` 默认 `None`，`choices` 限制为 `cpu` 与 `cuda`。三十个超参数从命令行移进 YAML，命令行只负责选择配置文件、覆盖恢复路径与运行设备。
+`cs336_basics/train.py`。配置从 YAML 读取，命令行只保留三个参数：`--config`、`--resume`、`--device`。`parse_args` 在 `:21`，`choices` 限制设备取值。
 
-`load_config`（`:28`）用 `yaml.safe_load` 读取，检查 `model`、`optimizer`、`data`、`run`、`checkpoint` 五个顶层键，按顺序调用 `merged.update(section)` 合并成平铺字典，再交给 `argparse.Namespace` 构造。命令行提供的 `resume` 与 `device` 覆盖文件值。`yaml.safe_load` 的隐式类型要留意：`1e-3` 解析成字符串，写成 `1.0e-3` 才得到浮点数。
+`load_config`（`:30`）用 `yaml.safe_load` 读取，检查 `model`、`optimizer`、`data`、`run`、`checkpoint` 五个顶层键。合并时记录每个键来自哪个分组，出现重名键直接抛出 `ValueError`；`argparse.Namespace(**merged)` 把 26 个字段变成平铺属性。命令行提供的 `resume` 与 `device` 覆盖文件值。
 
-`validate_config`（`:57`）收集全部错误再一次性抛出。检查覆盖数值范围与跨字段关系。数值范围包括正整数 12 项（`vocab_size`、`context_length`、`d_model`、`num_heads` 等）、非负整数（`warmup_steps`、`seed`）、正数（`max_lr`、`eps`、`rope_theta`）、非负数（`min_lr`、`weight_decay`、`grad_clip`）。跨字段关系包括 `d_model % num_heads == 0`、`min_lr <= max_lr`、`warmup_steps < total_steps`。数据路径与恢复路径用 `os.path.isfile` 检查。`bool` 从整数检查里排除。
+`validate_config`（`:70`）把错误收集到列表，最后一次性抛出。正整数 12 项、非负整数 2 项、正数 4 项、非负数 2 项；跨字段检查 `d_model % num_heads == 0`、`min_lr <= max_lr`、`warmup_steps < total_steps`。`device` 为 `cuda` 时调用 `torch.cuda.is_available()`。数据路径与恢复路径用 `os.path.isfile` 检查。`bool` 从整数检查里排除。
+
+`load_datasets`（`:183`）用 `np.load` 与 `mmap_mode="r"` 返回两个 `np.memmap`，dtype 为 `uint16`。
+
+`build_model`（`:189`）按 `TransformerLM` 的构造顺序传入 `d_model`、`num_heads`、`d_ff`、`vocab_size`、`context_length`、`num_layers`、`rope_theta`、`device`。`build_optimizer`（`:201`）创建 `AdamW`，学习率取 `config.max_lr`。
+
+`save_checkpoint_if_due`（`:210`）用 `os.path.join` 把目录与 `checkpoint_{iteration}.pt` 拼成文件路径，`os.makedirs(..., exist_ok=True)` 创建目录，调用 `save_checkpoint`，返回路径。调用点按 `checkpoint_interval` 判断，循环结束后再无条件保存一次。
+
+`load_checkpoint_if_needed`（`:218`）在 `config.resume` 为 `None` 时返回 0；有路径时调用 `load_checkpoint`，返回保存的 iteration。
+
+`evaluate`（`:225`）在 `model.eval()` 与 `torch.no_grad()` 下运行 `eval_batches` 个批次，累加 `cross_entropy` 的 `.item()`，除以批次数量，最后切回 `model.train()`，返回 Python 浮点数。
+
+`train`（`:243`）先设置 `torch.manual_seed` 与 `np.random.seed`，加载数据、创建模型与优化器、恢复检查点。每一步按顺序执行：写入学习率、取批次、清零梯度、前向传播、交叉熵、反向传播、梯度裁剪、优化器更新。验证、检查点、日志分别按三个间隔触发。训练结束保存最终检查点，返回 `iteration`、`last_train_loss`、`last_val_loss`、两个历史列表、`last_checkpoint` 与 `paths`。
+
+### 踩过的坑
+
+`torch.no_grad()` 写成单独一行，验证期间仍然建立计算图。它返回上下文管理器，必须放进 `with` 块。玩具验证：裸调用前后 `torch.is_grad_enabled()` 都是 `True`，进入 `with` 才变成 `False`。
+
+`save_checkpoint_if_due` 第一版把 `config.checkpoint_dir` 直接传给 `save_checkpoint`。目录被当成文件路径，`torch.save` 报错；函数也没有返回值，`train` 拿不到路径。修改为拼接文件路径并返回。
+
+`load_checkpoint_if_needed` 第一版用 `config.checkpoint_dir` 作为加载路径。目录不能作为检查点读取；改用 `config.resume`，并在为 `None` 时返回 0。
+
+`evaluate` 返回 Python 浮点数。第一版在调用方写了 `val_loss.item()`，浮点数没有 `.item()`，抛出 `AttributeError`。
+
+YAML 的 `1e-3` 解析成字符串。配置里写成 `1.0e-3`，`yaml.safe_load` 返回 `float`。
+
+配置键名与代码里的属性必须一致。`max_lr`、`rope_theta` 这类拼写错误在运行时才暴露为 `AttributeError`，`validate_config` 也依赖这些键名。
+
+`load_datasets` 返回内存映射数组，文件缺失时 `np.load` 抛出 `FileNotFoundError`。训练前需要先用分词脚本生成两个 `.npy`。
 
 ## 配置文件
 
-`configs/tinystories.yaml` 与 `configs/owt.yaml`。TinyStories 的词表 10000，OWT 的词表 32000，两者模型架构与优化器数值相同。OWT 的 BPE 需要约 100GB 内存，本机 48GB 内存不够，`data/owt_train.npy` 与 `data/owt_valid.npy` 尚未生成，这份配置暂时不能运行。
+`configs/tinystories.yaml` 与 `configs/owt.yaml`。TinyStories 的词表 10000，OWT 的词表 32000，两者模型架构与优化器数值相同。OWT 的 BPE 需要约 100GB 内存，本机 48GB 内存不够。
 
-`toknizer_params/` 里只有 TinyStories 的词表与合并文件。`scripts/tokenize_data.py` 仍是空文件，`data/train.npy` 与 `data/val.npy` 还没有生成，`validate_config` 的文件检查会在这里失败。
+`toknizer_params/` 里只有 TinyStories 的词表与合并文件。训练脚本消费 `data/train.npy` 与 `data/val.npy`，这两个文件由分词脚本生成。
 
