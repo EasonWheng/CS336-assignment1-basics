@@ -1,10 +1,7 @@
 # AdamW, cosine schedule
+
 import math
-
 import torch
-from torch import Tensor
-from einops import rearrange, einsum
-
 from cs336_basics.model import count_matmul_FLOPs
 
 
