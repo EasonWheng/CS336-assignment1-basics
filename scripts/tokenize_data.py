@@ -66,6 +66,18 @@ def compression_ratio_tiny():
     compression_ratio(tiny_val_save, tiny_val)
 
 
+def print_tokens(path, size):
+    tokens = np.load(path, mmap_mode="r")
+    print(f"何意味，分词结果前 {size} 个:")
+    for token in tokens[:size]:
+        print(token)
+
+
+def print_tokens_tiny(size):
+    print_tokens(r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\train.npy", size)
+
+
 if __name__ == "__main__":
     # build_tiny_BPE()
     compression_ratio_tiny()
+    print_tokens_tiny(5)
