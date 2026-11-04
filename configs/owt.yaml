@@ -32,6 +32,9 @@ run:
   log_interval: 10
   eval_interval: 100
   eval_batches: 20
+  wandb_enabled: false
+  wandb_project: cs336-a1
+  run_name: owt
 
 checkpoint:
   checkpoint_dir: checkpoints/owt

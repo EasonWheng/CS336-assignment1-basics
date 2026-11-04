@@ -10,6 +10,31 @@ from cs336_basics.optimizer import AdamW, learning_rate_schedule
 from cs336_basics.data import get_batch
 from cs336_basics.serialization import save_checkpoint, load_checkpoint
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import wandb
+
+
+def plot_losses(train_history, val_history, log_interval, eval_interval,
+                out_path="loss_curve.png", start_iteration=0):
+    train_steps = [start_iteration + (i + 1) * log_interval
+                   for i in range(len(train_history))]
+    val_steps = [start_iteration + (i + 1) * eval_interval
+                 for i in range(len(val_history))]
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    ax.plot(train_steps, train_history, label="train loss")
+    ax.plot(val_steps, val_history, label="val loss")
+    ax.set_xlabel("iteration")
+    ax.set_ylabel("cross-entropy loss")
+    ax.set_title("TinyStories training")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+
 
 REQUIRED_GROUPS = ("model", "optimizer", "data", "run", "checkpoint")
 
@@ -236,6 +261,14 @@ def evaluate(model, val_data, config):
 
 
 def train(config):
+    run = None
+    if getattr(config, "wandb_enabled", False):
+        run = wandb.init(
+            project=getattr(config, "wandb_project", "cs336-a1"),
+            name=getattr(config, "run_name", None),
+            config=vars(config),
+        )
+
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
 
@@ -275,6 +308,8 @@ def train(config):
             print(f"当前val_loss = {val_loss}", flush=True)
             val_loss_history.append(val_loss)
             last_val_loss = val_loss
+            if run is not None:
+                wandb.log({"val/loss": val_loss}, step=i + 1)
 
         if (i + 1) % config.checkpoint_interval == 0:
             paths.append(save_checkpoint_if_due(model, optimizer, i + 1, config))
@@ -283,10 +318,17 @@ def train(config):
             average_train_loss = train_loss_acc / iteration_i
             train_loss_history.append(average_train_loss)
             # 打印日志
+            if run is not None:
+                wandb.log(
+                    {"train/loss": average_train_loss, "lr": lr, "iteration": i + 1},
+                    step=i + 1,
+                )
             print(f"该评估区间的平均训练train_loss: {train_loss_acc / iteration_i}", flush=True)
             train_loss_acc, iteration_i = 0, 0
 
     path = save_checkpoint_if_due(model, optimizer, config.total_steps, config)
+    if run is not None:
+        wandb.finish()
 
     return {
         "iteration": config.total_steps,
@@ -305,7 +347,13 @@ def main():
     validate_config(config)
 
     fnl_log = train(config)
-    print(fnl_log)
+    plot_losses(
+        fnl_log["train_history"],
+        fnl_log["val_history"],
+        log_interval=config.log_interval,
+        eval_interval=config.eval_interval,
+        out_path="loss_curve.png",
+    )
 
     return 0
 

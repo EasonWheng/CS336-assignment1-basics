@@ -1,5 +1,5 @@
 # TinyStories 训练配置
-# 数值与 cs336_basics/train.py 的 GROUPS 默认值一致。
+# 对应手册 7.2 节的低资源配置：batch 32 × 5000 步 × 256 = 40,960,000 token。
 # 科学计数法保留小数点，避免 PyYAML 解析成字符串。
 
 model:
@@ -32,6 +32,9 @@ run:
   log_interval: 10
   eval_interval: 100
   eval_batches: 20
+  wandb_enabled: false
+  wandb_project: cs336-a1
+  run_name: tinystories
 
 checkpoint:
   checkpoint_dir: checkpoints
