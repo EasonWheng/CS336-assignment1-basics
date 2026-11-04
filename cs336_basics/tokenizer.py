@@ -321,7 +321,7 @@ if __name__ == "__main__":
 
     choose = {"short": path_fast, "long": path_slow}
     choose_path = {"long": [vocab_path_owt, merge_path_owt], "short":[vocab_path_TinyStoriesV2_GPT4, merge_path_TinyStoriesV2_GPT4]}
-    params = train_bpe(choose[config_long_or_short], 10000, ["<|endoftext|>"])
+    params = train_bpe(choose[config_long_or_short], 32000, ["<|endoftext|>"])
     vocab, merges = params
 
     path_params = choose_path[config_long_or_short]
