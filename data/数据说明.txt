@@ -1,0 +1,27 @@
+数据目录说明
+更新时间：2026-11-04
+
+原始文本（不在版本库）
+- TinyStoriesV2-GPT4-train.txt：2,227,753,162 字节，15,600,056 行
+- TinyStoriesV2-GPT4-valid.txt：22,502,601 字节，157,831 行
+- owt_train.txt：11,920,511,059 字节，94,568,884 行
+- owt_valid.txt：289,998,753 字节，2,301,018 行
+
+分词产物（不在版本库）
+- train.npy：541,229,169 个 token，uint16，1,082,458,466 字节，最大 ID 9999
+- val.npy：5,465,880 个 token，uint16，10,931,888 字节，最大 ID 9999
+- 分词器：toknizer_params/vocab_TinyStoriesV2-GPT4.json（10000 项），merges_TinyStoriesV2-GPT4.json（9743 对）
+- 特殊 token：<|endoftext|>，ID 256
+
+压缩比
+- 训练集：4.116 bytes/token
+- 验证集：4.117 bytes/token
+
+生成方式
+- scripts/tokenize_data.py
+- Tokenizer.from_files(..., special_tokens=["<|endoftext|>"])
+- encode_iterable 流式编码，array.array("H") 累积，np.save 写入
+
+未生成
+- OWT 的 32000 词表分词器，以及 owt_train.npy、owt_valid.npy
+- OWT BPE 训练需要约 100GB 内存
