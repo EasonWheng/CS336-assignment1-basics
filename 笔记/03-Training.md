@@ -200,7 +200,7 @@ YAML 的 `1e-3` 解析成字符串。配置里写成 `1.0e-3`，`yaml.safe_load`
 
 `configs/tinystories.yaml` 与 `configs/owt.yaml`。TinyStories 的词表 10000，OWT 的词表 32000，两者模型架构与优化器数值相同。OWT 的 BPE 需要约 100GB 内存，本机 48GB 内存不够。
 
-`toknizer_params/` 里只有 TinyStories 的词表与合并文件。训练脚本消费 `data/train.npy` 与 `data/val.npy`，这两个文件由分词脚本生成。
+`toknizer_params/` 里只有 TinyStories 的词表与合并文件。训练脚本消费 `data/tiny_train.npy` 与 `data/tiny_val.npy`，这两个文件由分词脚本生成。
 
 ## 数据分词
 
@@ -208,7 +208,7 @@ YAML 的 `1e-3` 解析成字符串。配置里写成 `1.0e-3`，`yaml.safe_load`
 
 文本以 `utf-8` 编码打开，文件对象交给 `encode_iterable`。这个方法按行接收字符串，内部保留缓冲区，处理行边界与特殊 token。返回生成器，必须在 `with` 块内消费；块外再遍历会抛出 `ValueError: I/O operation on closed file`。
 
-ID 用 `array.array("H")` 累积，每个元素占 2 字节。编码结束后用 `np.frombuffer(ids, dtype=np.uint16)` 转成 NumPy 数组，调用 `np.save` 写入 `data/train.npy` 与 `data/val.npy`。`configs/tinystories.yaml` 的 `train_data` 与 `val_data` 指向这两个文件。
+ID 用 `array.array("H")` 累积，每个元素占 2 字节。编码结束后用 `np.frombuffer(ids, dtype=np.uint16)` 转成 NumPy 数组，调用 `np.save` 写入 `data/tiny_train.npy` 与 `data/tiny_val.npy`。`configs/tinystories.yaml` 的 `train_data` 与 `val_data` 指向这两个文件。
 
 ### API 用法
 
@@ -242,7 +242,7 @@ TinyStories 训练集 2.1GB、15,600,056 行，验证集 22MB。OWT 训练集 12
 
 ### 分词结果
 
-TinyStories 训练集 2,227,753,162 字节，编码后 541,229,169 个 token，压缩比 4.1161 bytes/token；`data/train.npy` 为 1,082,458,466 字节。验证集 22,502,601 字节，编码后 5,465,880 个 token，压缩比 4.1169 bytes/token；`data/val.npy` 为 10,931,888 字节。两个数组的 dtype 都是 `uint16`，最大 ID 9999，训练集最小 ID 9，验证集最小 ID 10。
+TinyStories 训练集 2,227,753,162 字节，编码后 541,229,169 个 token，压缩比 4.1161 bytes/token；`data/tiny_train.npy` 为 1,082,458,466 字节。验证集 22,502,601 字节，编码后 5,465,880 个 token，压缩比 4.1169 bytes/token；`data/tiny_val.npy` 为 10,931,888 字节。两个数组的 dtype 都是 `uint16`，最大 ID 9999，训练集最小 ID 9，验证集最小 ID 10。
 
 `scripts/tokenize_data.py` 增加 `compression_ratio(token_path, text_path)`：`np.load(..., mmap_mode="r")` 返回内存映射数组，`len(tokens)` 是 token 数；`os.path.getsize(text_path)` 返回源文件字节数；两者相除得到 bytes/token，打印用 `f"{ratio:.4f}"` 保留四位小数。
 

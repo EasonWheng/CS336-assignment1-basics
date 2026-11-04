@@ -8,8 +8,8 @@
 - owt_valid.txt：289,998,753 字节，2,301,018 行
 
 分词产物（不在版本库）
-- train.npy：541,229,169 个 token，uint16，1,082,458,466 字节，最大 ID 9999
-- val.npy：5,465,880 个 token，uint16，10,931,888 字节，最大 ID 9999
+- tiny_train.npy：541,229,169 个 token，uint16，1,082,458,466 字节，最大 ID 9999
+- tiny_val.npy：5,465,880 个 token，uint16，10,931,888 字节，最大 ID 9999
 - 分词器：toknizer_params/vocab_TinyStoriesV2-GPT4.json（10000 项），merges_TinyStoriesV2-GPT4.json（9743 对）
 - 特殊 token：<|endoftext|>，ID 256
 

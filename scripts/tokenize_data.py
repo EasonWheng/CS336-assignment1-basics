@@ -6,8 +6,8 @@ from cs336_basics.tokenizer import Tokenizer
 import numpy as np
 import array
 
-#   train_data: data/train.npy
-#   val_data: data/val.npy
+#   train_data: data/tiny_train.npy
+#   val_data: data/tiny_val.npy
 def build_tokenizer(vocab_path, merge_path, spectoken):
     return Tokenizer.from_files(vocab_path, merge_path, spectoken)
 
@@ -46,20 +46,20 @@ def build_tiny_BPE():
     tokenizer = build_tokenizer(vocab_path_TinyStoriesV2_GPT4, merge_path_TinyStoriesV2_GPT4, ["<|endoftext|>"])
 
     tiny_train = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\TinyStoriesV2-GPT4-train.txt"
-    tiny_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\train.npy"
+    tiny_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\tiny_train.npy"
     tokenize_file(tokenizer, tiny_train, tiny_save)
 
     tiny_val = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\TinyStoriesV2-GPT4-valid.txt"
-    tiny_val_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\val.npy"
+    tiny_val_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\tiny_val.npy"
     tokenize_file(tokenizer, tiny_val, tiny_val_save)
 
 
 def compression_ratio_tiny():
     tiny_train = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\TinyStoriesV2-GPT4-train.txt"
-    tiny_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\train.npy"
+    tiny_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\tiny_train.npy"
 
     tiny_val = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\TinyStoriesV2-GPT4-valid.txt"
-    tiny_val_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\val.npy"
+    tiny_val_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\tiny_val.npy"
     print("tiny-train:")
     compression_ratio(tiny_save, tiny_train)
     print("tiny-val:")
@@ -74,7 +74,8 @@ def print_tokens(path, size):
 
 
 def print_tokens_tiny(size):
-    print_tokens(r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\train.npy", size)
+    print_tokens(r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\tiny_train.npy", size)
+    print_tokens(r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\tiny_val.npy", size)
 
 
 if __name__ == "__main__":
