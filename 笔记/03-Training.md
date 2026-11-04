@@ -1,4 +1,35 @@
-2026-11-01 · test_adamw、test_get_lr_cosine_schedule、test_gradient_clipping、test_get_batch、test_checkpointing 通过，训练部分随 4.1–5.2 增补
+2026-11-01 · test_cross_entropy、test_adamw、test_get_lr_cosine_schedule、test_gradient_clipping、test_get_batch、test_checkpointing 通过，训练部分随 4.1–5.2 增补
+
+## 交叉熵
+
+`cs336_basics/nn_utils.py:8`。手册式 (16) 的分母是 `|D|·m`，`|D|` 是批大小，`m` 是序列长度，相乘就是全部位置的个数，`.mean()` 对前导维一起求平均正好对上。测试把 `(2,4,5)` 的输入 `view(-1,5)` 压成 `(8,5)`，targets 是 `(8,)`。
+
+第一版写成 `Ui_x = tmp[target]`：
+
+```python
+tmp = logits - logits.max(dim=-1, keepdim=True).values   # (8, 5)
+Ui_x = tmp[target]                                       # (8, 5)，取的是整行
+```
+
+`target` 作用在第 0 维，把 8 行中对应的几行整行取出来。期望 1.6094727516，计算得到 1.6025854349，相对差 0.43%。这个量级像精度问题，实际是取错了元素。`tmp[..., target]` 也一样，`...` 展开成第 0 维，结果 `(8,8)`。
+
+要沿最后一维取，index 得和输入同维数：
+
+```python
+Ui_x = tmp.gather(-1, target.unsqueeze(-1))                 # (8, 1)
+sum_exp = torch.sum(torch.exp(tmp), dim=-1, keepdim=True)   # (8, 1)
+loss = (torch.log(sum_exp) - Ui_x).mean()
+```
+
+`(8,)` 补成 `(8,1)` 才能取。`dim=-1` 是在每个位置自己的 5 个 logit 里挑一个。
+
+中间一版取完又添加了 `.squeeze(-1)`，`Ui_x` 变回 `(8,)`。它和 `(8,1)` 的 `sum_exp` 相减，广播出 `(8,8)` 的矩阵。测试照样通过，还是 1.6094727516：64 个数一起求平均，`(L_i − U_j)` 全配对相加再除以 64，最后等于 i 和 j 相同的那 8 项求平均。
+
+换成 `(B,T,V)` 的输入就报错了。`sum_exp` 是 `(B,T,1)`，`Ui_x` 是 `(B,T)`，右边补成 `(1,B,T)`，中间那维 `T` 和 `B` 对不上。手册 3.2 节要处理批次维，最后把 squeeze 去掉，两边都是 `(B,T,1)`。
+
+求 `log` 之前先对 `exp` 求和，`log` 和 `exp` 没有分开计算过。
+
+测试第二段把输入乘 1000，先减最大值把 `exp` 的输入拉回 0 附近，结果和 `F.cross_entropy` 相差在 1e-4 以内。
 
 ## 学习率
 
@@ -156,8 +187,6 @@ torch.save(dict_to_save, out)
 
 作业实际训练用的是 7.2 节的小配置：4 层、16 头、`d_model=512`、`d_ff=1344`、词表 10000、上下文 256、1700 万参数、3.28 亿 token，B200 上 20–30 分钟。低资源版本缩减到 4000 万 token，CPU 约 1 小时 22 分。
 
-测试适配器全部接入完成。剩下 5.3 的训练脚本和第 6 节的生成。
-
 ## 训练脚本（5.3）
 
 `cs336_basics/train.py`。配置从 YAML 读取，命令行只保留三个参数：`--config`、`--resume`、`--device`。`parse_args` 在 `:16`，`choices` 限制设备取值。
@@ -201,63 +230,3 @@ YAML 的 `1e-3` 解析成字符串。配置里写成 `1.0e-3`，`yaml.safe_load`
 `configs/tinystories.yaml` 与 `configs/owt.yaml`。TinyStories 的词表 10000，OWT 的词表 32000，两者模型架构与优化器数值相同。OWT 的 BPE 需要约 100GB 内存，本机 48GB 内存不够。
 
 `toknizer_params/` 里只有 TinyStories 的词表与合并文件。训练脚本消费 `data/tiny_train.npy` 与 `data/tiny_val.npy`，这两个文件由分词脚本生成。
-
-## 数据分词
-
-`scripts/tokenize_data.py`。分词器用 `Tokenizer.from_files` 构造，传入 `toknizer_params/vocab_TinyStoriesV2-GPT4.json`、`merges_TinyStoriesV2-GPT4.json` 与 `special_tokens=["<|endoftext|>"]`。合并文件一行一个 JSON 数组，`load_tokenizer` 逐行解析；直接对合并文件调用 `json.load` 会抛出 `Extra data`。
-
-文本以 `utf-8` 编码打开，文件对象交给 `encode_iterable`。这个方法按行接收字符串，内部保留缓冲区，处理行边界与特殊 token。返回生成器，必须在 `with` 块内消费；块外再遍历会抛出 `ValueError: I/O operation on closed file`。
-
-ID 用 `array.array("H")` 累积，每个元素占 2 字节。编码结束后用 `np.frombuffer(ids, dtype=np.uint16)` 转成 NumPy 数组，调用 `np.save` 写入 `data/tiny_train.npy` 与 `data/tiny_val.npy`。`configs/tinystories.yaml` 的 `train_data` 与 `val_data` 指向这两个文件。
-
-### API 用法
-
-| API | 作用 | 参数与返回 |
-| --- | --- | --- |
-| `Tokenizer.from_files(vocab, merges, special_tokens=None)` | 读取词表与合并文件，构造分词器 | 类方法；返回 `Tokenizer` |
-| `encode_iterable(iterable)` | 流式编码 | 参数是字符串的可迭代对象；返回生成器，逐个产出整数 |
-| `encode(text)` | 编码单个字符串 | 返回 `list[int]` |
-| `itertools.islice(iterator, n)` | 从迭代器取出前 n 项 | 返回迭代器；不复制剩余部分 |
-| `array.array("H")` | 动态整数缓冲区 | 每个元素占 2 字节；`extend` 批量追加 |
-| `np.frombuffer(buffer, dtype=np.uint16)` | 把缓冲区解释成数组 | 不复制数据；返回与缓冲区共享内存的 `ndarray` |
-| `np.save(path, array)` | 写入 `.npy` 文件 | 路径没有 `.npy` 后缀时自动追加；保存 dtype 与形状 |
-| `np.load(path, mmap_mode="r")` | 读取 `.npy` 文件 | 返回 `np.memmap`，按需读取磁盘 |
-| `os.path.getsize(path)` | 返回文件字节数 | 不打开文件；文本模式读取的字符数不能代替 |
-
-`np.frombuffer` 返回视图，与缓冲区共享内存。修改返回数组会修改原缓冲区；玩具验证：`b[0] = 9` 之后 `array.array` 的第一个元素也变成 9。传入 `bytes` 时视图只读，传入 `array.array` 时可写。
-
-`np.save` 写入 `.npy` 头与二进制数据，`np.load` 从头里读出 dtype 与形状。刚才验证：`np.save("x", arr)` 生成 `x.npy`，`np.load("x.npy", mmap_mode="r")` 返回 `memmap`，dtype 为 `uint16`，形状与保存前一致。
-
-`scripts/tokenize_data.py` 拆成两个函数。`build_tokenizer(vocab_path, merge_path, special_tokens)` 构造分词器；`tokenize_file(tokenizer, file_path, save_path)` 接收分词器、文本路径与输出路径。分词器通过参数传入，函数不依赖全局变量。`tokenize_file` 用 `islice` 每次取 10 万个 token，累计到 `array.array("H")`，每 100 万 token 输出一次进度。
-
-`f.read()` 传给 `encode_iterable` 会按字符遍历整个字符串，缓冲区反复处理，复杂度接近平方；大文件必须传入文件对象。
-
-`if __name__ == "main"` 的判断永远为假，Python 的入口名是 `"__main__"`。`import array` 之后调用 `array("H")` 会抛出 `TypeError: 'module' object is not callable`，构造器是 `array.array`。
-
-调用验证集时写成 `tokenize_file(tiny_val_save, tiny_val_save)`，把输出路径当成输入文本。第一次运行时 `open` 抛出 `FileNotFoundError`；生成过文件后会把二进制 `.npy` 当成 UTF-8 文本读取。输入路径与输出路径分开传。
-
-分词器产物检查：词表 10000 项，ID 0–9999；合并 9743 对；特殊 token `<|endoftext|>` 的 ID 是 256；0–255 对应单字节；每个合并对的两部分在合并时已经存在，9743 个结果全部在词表里，没有重复；词表等于基础字节、合并结果与特殊 token 的并集。最长 token 是 `b' accomplishment'`，15 字节，ID 7160。
-
-TinyStories 训练集 2.1GB、15,600,056 行，验证集 22MB。OWT 训练集 12GB、94,568,884 行，BPE 训练需要约 100GB 内存，本机 48GB 不够；OWT 分词器使用 32000 词表，属于另一份产物。
-
-### 分词结果
-
-TinyStories 训练集 2,227,753,162 字节，编码后 541,229,169 个 token，压缩比 4.1161 bytes/token；`data/tiny_train.npy` 为 1,082,458,466 字节。验证集 22,502,601 字节，编码后 5,465,880 个 token，压缩比 4.1169 bytes/token；`data/tiny_val.npy` 为 10,931,888 字节。两个数组的 dtype 都是 `uint16`，最大 ID 9999，训练集最小 ID 9，验证集最小 ID 10。
-
-`scripts/tokenize_data.py` 增加 `compression_ratio(token_path, text_path)`：`np.load(..., mmap_mode="r")` 返回内存映射数组，`len(tokens)` 是 token 数；`os.path.getsize(text_path)` 返回源文件字节数；两者相除得到 bytes/token，打印用 `f"{ratio:.4f}"` 保留四位小数。
-
-单进程编码从 10:29 运行到 15:55。前段与其他进程争用 CPU，后段单核吞吐约 56,000 token/s。训练配置取 5000 步 × batch 32 × 上下文 256 = 40,960,000 个 token，占训练集的 7.6%。
-
-`data/` 在 `.gitignore` 里，原始文本与 `.npy` 不进入版本库；`data/数据说明.txt` 用 `git add -f` 单独提交。
-
-### 并行分词
-
-分词是 CPU 密集型任务。当前机器 i7-12700H 有 14 个核心、20 个逻辑处理器；单进程运行时，进程的 CPU 时间占经过时间的 96%，吞吐约 42,000–48,000 token/s，其余核心空闲。Python 的 GIL 让多线程在同一时刻只执行一个线程的字节码，线程切换不会提高吞吐；并行要用 `multiprocessing`，每个进程有独立的解释器与 GIL。
-
-切分点必须落在 `<|endoftext|>` 之后。先以二进制模式分块扫描文件，记录每个分隔符结束位置的字节偏移，再把偏移列表均分成 N 段，每段是一个 `(start, end)` 区间。区间边界都是 ASCII 字节，二进制定位不会切坏 UTF-8 字符；每段以完整文档结束，跨段合并不存在。
-
-工作进程自己打开文件，`seek(start)`，循环 `readline()` 到 `end`，把每行用 `utf-8` 解码后产出。这个生成器交给 `encode_iterable`，缓冲区照常处理行边界与特殊 token。进程之间不共享文件句柄，也不共享分词器；用 `Pool` 的 `initializer` 让每个进程构造一次 `Tokenizer`。
-
-`Pool.imap` 按区间顺序返回数组，父进程按顺序拼接。TinyStories 总量约 1GB，直接 `np.concatenate` 后 `np.save` 即可。OWT 约 30 亿 token、6GB，父进程持有全部数组再拼接会翻倍内存；让工作进程各自写临时 `.npy`，父进程用 `np.lib.format.open_memmap` 分配最终文件，再逐段写入。
-
-Windows 的 `multiprocessing` 使用 spawn，工作函数与初始化函数必须是模块级函数，入口放在 `if __name__ == "__main__"` 下面。i7-12700H 有 6 个性能核，进程数取 6 左右；OWT 机器按内存与核心数调整。

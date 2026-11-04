@@ -2,8 +2,6 @@
 
 2026-10-25 · model.py 的 13 项测试全部通过，含 test_transformer_lm 与 test_transformer_lm_truncated_input
 
-2026-11-01 · nn_utils.py 的 test_cross_entropy 通过
-
 ## Linear
 
 `cs336_basics/model.py:11`。权重保存为 `(d_out, d_in)`，方向和 `tests/adapters.py:19` 的 `weights` 标注一致，加载权重不用转置。
@@ -203,43 +201,9 @@ attn.q_proj.weight    ln1.weight    ffn.w1.weight
 
 占比的分母是整次前向的总 FLOPs。`count_matmul_FLOPs` 打印的是单块占比，两者相差几个百分点，FFN 在 1024 时是 60.36% 对 57.53%。
 
-## 交叉熵
-
-`cs336_basics/nn_utils.py:8`。手册式 (16) 的分母是 `|D|·m`，`|D|` 是批大小，`m` 是序列长度，相乘就是全部位置的个数，`.mean()` 对前导维一起求平均正好对上。测试把 `(2,4,5)` 的输入 `view(-1,5)` 压成 `(8,5)`，targets 是 `(8,)`。
-
-第一版写成 `Ui_x = tmp[target]`：
-
-```python
-tmp = logits - logits.max(dim=-1, keepdim=True).values   # (8, 5)
-Ui_x = tmp[target]                                       # (8, 5)，取的是整行
-```
-
-`target` 作用在第 0 维，把 8 行中对应的几行整行取出来。期望 1.6094727516，计算得到 1.6025854349，相对差 0.43%。这个量级像精度问题，实际是取错了元素。`tmp[..., target]` 也一样，`...` 展开成第 0 维，结果 `(8,8)`。
-
-要沿最后一维取，index 得和输入同维数：
-
-```python
-Ui_x = tmp.gather(-1, target.unsqueeze(-1))                 # (8, 1)
-sum_exp = torch.sum(torch.exp(tmp), dim=-1, keepdim=True)   # (8, 1)
-loss = (torch.log(sum_exp) - Ui_x).mean()
-```
-
-`(8,)` 补成 `(8,1)` 才能取。`dim=-1` 是在每个位置自己的 5 个 logit 里挑一个。
-
-中间一版取完又添加了 `.squeeze(-1)`，`Ui_x` 变回 `(8,)`。它和 `(8,1)` 的 `sum_exp` 相减，广播出 `(8,8)` 的矩阵。测试照样通过，还是 1.6094727516：64 个数一起求平均，`(L_i − U_j)` 全配对相加再除以 64，最后等于 i 和 j 相同的那 8 项求平均。
-
-换成 `(B,T,V)` 的输入就报错了。`sum_exp` 是 `(B,T,1)`，`Ui_x` 是 `(B,T)`，右边补成 `(1,B,T)`，中间那维 `T` 和 `B` 对不上。手册 3.2 节要处理批次维，最后把 squeeze 去掉，两边都是 `(B,T,1)`。
-
-求 `log` 之前先对 `exp` 求和，`log` 和 `exp` 没有分开计算过。
-
-测试第二段把输入乘 1000，先减最大值把 `exp` 的输入拉回 0 附近，结果和 `F.cross_entropy` 相差在 1e-4 以内。
-
 ## adapters
 
 Linear、Embedding、RMSNorm 三个 adapter 构造后加载权重，属性名和参考 key 对上，写错时报 `Missing key(s) in state_dict: "weight"`。`run_cross_entropy` 直接调用，把输入和目标原样传给 `cross_entropy`（`tests/adapters.py:482`）。
 
 SwiGLU 用 `.data` 直接赋值（`tests/adapters.py:93`），SiLU 直接调函数（`:421`）。MHA 的两个 adapter 加载四份投影权重，带 RoPE 的那个多构造一个 rope 对象。Block 和 LM 都是一句 `load_state_dict(weights)` 加载完成（`:299`、`:383`）。
 
-## 下一步
-
-模型和交叉熵完成。剩下 `nn_utils.py` 的 gradient_clipping、`optimizer.py`、`data.py`、`serialization.py`。
