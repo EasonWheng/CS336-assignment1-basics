@@ -217,6 +217,7 @@ ID 用 `array.array("H")` 累积，每个元素占 2 字节。编码结束后用
 | `Tokenizer.from_files(vocab, merges, special_tokens=None)` | 读取词表与合并文件，构造分词器 | 类方法；返回 `Tokenizer` |
 | `encode_iterable(iterable)` | 流式编码 | 参数是字符串的可迭代对象；返回生成器，逐个产出整数 |
 | `encode(text)` | 编码单个字符串 | 返回 `list[int]` |
+| `itertools.islice(iterator, n)` | 从迭代器取出前 n 项 | 返回迭代器；不复制剩余部分 |
 | `array.array("H")` | 动态整数缓冲区 | 每个元素占 2 字节；`extend` 批量追加 |
 | `np.frombuffer(buffer, dtype=np.uint16)` | 把缓冲区解释成数组 | 不复制数据；返回与缓冲区共享内存的 `ndarray` |
 | `np.save(path, array)` | 写入 `.npy` 文件 | 路径没有 `.npy` 后缀时自动追加；保存 dtype 与形状 |
@@ -226,9 +227,13 @@ ID 用 `array.array("H")` 累积，每个元素占 2 字节。编码结束后用
 
 `np.save` 写入 `.npy` 头与二进制数据，`np.load` 从头里读出 dtype 与形状。刚才验证：`np.save("x", arr)` 生成 `x.npy`，`np.load("x.npy", mmap_mode="r")` 返回 `memmap`，dtype 为 `uint16`，形状与保存前一致。
 
+`scripts/tokenize_data.py` 拆成两个函数。`build_tokenizer(vocab_path, merge_path, special_tokens)` 构造分词器；`tokenize_file(tokenizer, file_path, save_path)` 接收分词器、文本路径与输出路径。分词器通过参数传入，函数不依赖全局变量。`tokenize_file` 用 `islice` 每次取 10 万个 token，累计到 `array.array("H")`，每 100 万 token 输出一次进度。
+
 `f.read()` 传给 `encode_iterable` 会按字符遍历整个字符串，缓冲区反复处理，复杂度接近平方；大文件必须传入文件对象。
 
 `if __name__ == "main"` 的判断永远为假，Python 的入口名是 `"__main__"`。`import array` 之后调用 `array("H")` 会抛出 `TypeError: 'module' object is not callable`，构造器是 `array.array`。
+
+调用验证集时写成 `tokenize_file(tiny_val_save, tiny_val_save)`，把输出路径当成输入文本。第一次运行时 `open` 抛出 `FileNotFoundError`；生成过文件后会把二进制 `.npy` 当成 UTF-8 文本读取。输入路径与输出路径分开传。
 
 分词器产物检查：词表 10000 项，ID 0–9999；合并 9743 对；特殊 token `<|endoftext|>` 的 ID 是 256；0–255 对应单字节；每个合并对的两部分在合并时已经存在，9743 个结果全部在词表里，没有重复；词表等于基础字节、合并结果与特殊 token 的并集。最长 token 是 `b' accomplishment'`，15 字节，ID 7160。
 
@@ -236,7 +241,7 @@ TinyStories 训练集 2.1GB、15,600,056 行，验证集 22MB。OWT 训练集 12
 
 ### 并行分词
 
-分词是 CPU 密集型任务。当前机器 i7-12700H 有 14 个核心、20 个逻辑处理器；单进程运行时，进程的 CPU 时间占经过时间的 96%，吞吐约 45,000 token/s，其余核心空闲。Python 的 GIL 让多线程在同一时刻只执行一个线程的字节码，线程切换不会提高吞吐；并行要用 `multiprocessing`，每个进程有独立的解释器与 GIL。
+分词是 CPU 密集型任务。当前机器 i7-12700H 有 14 个核心、20 个逻辑处理器；单进程运行时，进程的 CPU 时间占经过时间的 96%，吞吐约 42,000–48,000 token/s，其余核心空闲。Python 的 GIL 让多线程在同一时刻只执行一个线程的字节码，线程切换不会提高吞吐；并行要用 `multiprocessing`，每个进程有独立的解释器与 GIL。
 
 切分点必须落在 `<|endoftext|>` 之后。先以二进制模式分块扫描文件，记录每个分隔符结束位置的字节偏移，再把偏移列表均分成 N 段，每段是一个 `(start, end)` 区间。区间边界都是 ASCII 字节，二进制定位不会切坏 UTF-8 字符；每段以完整文档结束，跨段合并不存在。
 
