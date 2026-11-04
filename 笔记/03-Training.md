@@ -222,6 +222,7 @@ ID 用 `array.array("H")` 累积，每个元素占 2 字节。编码结束后用
 | `np.frombuffer(buffer, dtype=np.uint16)` | 把缓冲区解释成数组 | 不复制数据；返回与缓冲区共享内存的 `ndarray` |
 | `np.save(path, array)` | 写入 `.npy` 文件 | 路径没有 `.npy` 后缀时自动追加；保存 dtype 与形状 |
 | `np.load(path, mmap_mode="r")` | 读取 `.npy` 文件 | 返回 `np.memmap`，按需读取磁盘 |
+| `os.path.getsize(path)` | 返回文件字节数 | 不打开文件；文本模式读取的字符数不能代替 |
 
 `np.frombuffer` 返回视图，与缓冲区共享内存。修改返回数组会修改原缓冲区；玩具验证：`b[0] = 9` 之后 `array.array` 的第一个元素也变成 9。传入 `bytes` 时视图只读，传入 `array.array` 时可写。
 
@@ -241,7 +242,9 @@ TinyStories 训练集 2.1GB、15,600,056 行，验证集 22MB。OWT 训练集 12
 
 ### 分词结果
 
-TinyStories 训练集 2,227,753,162 字节，编码后 541,229,169 个 token，压缩比 4.116 bytes/token；`data/train.npy` 为 1,082,458,466 字节。验证集 22,502,601 字节，编码后 5,465,880 个 token，压缩比 4.117 bytes/token；`data/val.npy` 为 10,931,888 字节。两个数组的 dtype 都是 `uint16`，最大 ID 9999，训练集最小 ID 9，验证集最小 ID 10。
+TinyStories 训练集 2,227,753,162 字节，编码后 541,229,169 个 token，压缩比 4.1161 bytes/token；`data/train.npy` 为 1,082,458,466 字节。验证集 22,502,601 字节，编码后 5,465,880 个 token，压缩比 4.1169 bytes/token；`data/val.npy` 为 10,931,888 字节。两个数组的 dtype 都是 `uint16`，最大 ID 9999，训练集最小 ID 9，验证集最小 ID 10。
+
+`scripts/tokenize_data.py` 增加 `compression_ratio(token_path, text_path)`：`np.load(..., mmap_mode="r")` 返回内存映射数组，`len(tokens)` 是 token 数；`os.path.getsize(text_path)` 返回源文件字节数；两者相除得到 bytes/token，打印用 `f"{ratio:.4f}"` 保留四位小数。
 
 单进程编码从 10:29 运行到 15:55。前段与其他进程争用 CPU，后段单核吞吐约 56,000 token/s。训练配置取 5000 步 × batch 32 × 上下文 256 = 40,960,000 个 token，占训练集的 7.6%。
 

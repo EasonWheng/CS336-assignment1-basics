@@ -1,3 +1,5 @@
+import os
+
 from itertools import islice
 
 from cs336_basics.tokenizer import Tokenizer
@@ -28,16 +30,42 @@ def tokenize_file(tokenizer, file_path, save_path):
     np.save(save_path, arr)
 
 
-if __name__ == "__main__":
+def compression_ratio(token_path, text_path)->float:
+    tokens = np.load(token_path, mmap_mode="r")
+    origin_size = os.path.getsize(text_path)
+    # bytes / compression_ratio = tokens
+    compress_r = origin_size / len(tokens)
+    print(f"分词器在该文件的 compression ratio: {compress_r:.4f}")
+    return compress_r
+
+
+def build_tiny_BPE():
     vocab_path_TinyStoriesV2_GPT4 = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\toknizer_params\vocab_TinyStoriesV2-GPT4.json"
     merge_path_TinyStoriesV2_GPT4 = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\toknizer_params\merges_TinyStoriesV2-GPT4.json"
 
     tokenizer = build_tokenizer(vocab_path_TinyStoriesV2_GPT4, merge_path_TinyStoriesV2_GPT4, ["<|endoftext|>"])
 
     tiny_train = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\TinyStoriesV2-GPT4-train.txt"
-    tine_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\train.npy"
-    tokenize_file(tokenizer, tiny_train, tine_save)
+    tiny_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\train.npy"
+    tokenize_file(tokenizer, tiny_train, tiny_save)
 
     tiny_val = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\TinyStoriesV2-GPT4-valid.txt"
     tiny_val_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\val.npy"
     tokenize_file(tokenizer, tiny_val, tiny_val_save)
+
+
+def compression_ratio_tiny():
+    tiny_train = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\TinyStoriesV2-GPT4-train.txt"
+    tiny_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\train.npy"
+
+    tiny_val = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\TinyStoriesV2-GPT4-valid.txt"
+    tiny_val_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\val.npy"
+    print("tiny-train:")
+    compression_ratio(tiny_save, tiny_train)
+    print("tiny-val:")
+    compression_ratio(tiny_val_save, tiny_val)
+
+
+if __name__ == "__main__":
+    # build_tiny_BPE()
+    compression_ratio_tiny()
