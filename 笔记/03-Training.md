@@ -234,3 +234,15 @@ ID 用 `array.array("H")` 累积，每个元素占 2 字节。编码结束后用
 
 TinyStories 训练集 2.1GB、15,600,056 行，验证集 22MB。OWT 训练集 12GB、94,568,884 行，BPE 训练需要约 100GB 内存，本机 48GB 不够；OWT 分词器使用 32000 词表，属于另一份产物。
 
+### 并行分词
+
+分词是 CPU 密集型任务。当前机器 i7-12700H 有 14 个核心、20 个逻辑处理器；单进程运行时，进程的 CPU 时间占经过时间的 96%，吞吐约 45,000 token/s，其余核心空闲。Python 的 GIL 让多线程在同一时刻只执行一个线程的字节码，线程切换不会提高吞吐；并行要用 `multiprocessing`，每个进程有独立的解释器与 GIL。
+
+切分点必须落在 `<|endoftext|>` 之后。先以二进制模式分块扫描文件，记录每个分隔符结束位置的字节偏移，再把偏移列表均分成 N 段，每段是一个 `(start, end)` 区间。区间边界都是 ASCII 字节，二进制定位不会切坏 UTF-8 字符；每段以完整文档结束，跨段合并不存在。
+
+工作进程自己打开文件，`seek(start)`，循环 `readline()` 到 `end`，把每行用 `utf-8` 解码后产出。这个生成器交给 `encode_iterable`，缓冲区照常处理行边界与特殊 token。进程之间不共享文件句柄，也不共享分词器；用 `Pool` 的 `initializer` 让每个进程构造一次 `Tokenizer`。
+
+`Pool.imap` 按区间顺序返回数组，父进程按顺序拼接。TinyStories 总量约 1GB，直接 `np.concatenate` 后 `np.save` 即可。OWT 约 30 亿 token、6GB，父进程持有全部数组再拼接会翻倍内存；让工作进程各自写临时 `.npy`，父进程用 `np.lib.format.open_memmap` 分配最终文件，再逐段写入。
+
+Windows 的 `multiprocessing` 使用 spawn，工作函数与初始化函数必须是模块级函数，入口放在 `if __name__ == "__main__"` 下面。i7-12700H 有 6 个性能核，进程数取 6 左右；OWT 机器按内存与核心数调整。
+
