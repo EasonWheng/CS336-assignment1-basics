@@ -30,3 +30,27 @@ prompt 编码成 token ID 后送入模型，取最后一个位置的 logits；�
 
 朴素实现每步重算整个前缀。模型 17M 参数、上下文 256，在 CPU 上生成几百个 token 可以接受。KV cache 是进一步加速的手段：prefill 一次存下每层 K/V，后续只输入新 token；需要修改 attention 与 Block 的接口。作业的第 6 节只要求正确性，没有要求缓存。
 
+### 实现
+
+`decoding(prompt, max_token_num, context_len, temperature, top_p, model, device, eos_id)` 接收 `(1, S)` 的 token 张量。先分配 `(1, max_len)` 的缓冲区，`max_len = min(max_token_num + S, context_len)`；prompt 长度超过 `context_len` 时抛出 `ValueError`。prompt 写入前 S 个位置，`pos` 记下一个写入位置。
+
+循环在 `model.eval()` 与 `torch.no_grad()` 下执行：`input_ids = buffer[:, :pos]` 是视图，模型输出 `(1, pos, V)`，取 `[:, -1, :]`；`sampling` 返回 `(1, 1)`；遇到 EOS 就停止；否则写入 `buffer[:, pos:pos+1]`，`pos` 加一。返回 `buffer[:, :pos].clone()`，不把未写入的尾部带出去。
+
+`handle_user_input` 负责字符串与张量之间的转换：按 `tiny` 或 `owt` 选择词表路径，`eos_id = tokenizer.encode("<|endoftext|>")[0]`；用 `parse_args(["--config", path])` 与 `load_config` 得到配置；`build_model` 构造模型；`torch.load(checkpoint_path, map_location=device)` 读检查点，`load_state_dict(ckpt["model"])`，`model.to(device)`。返回的闭包把 prompt 编码成 `(1, S)`，调用 `decoding`，再用 `tokenizer.decode` 转回文本。
+
+### 踩过的坑
+
+EOS ID 不能从 `tokenizer.merges` 取；`merges` 是列表，没有 `.get`。用 `tokenizer.encode("<|endoftext|>")[0]` 或 `reversed_vocab[b"<|endoftext|>"]`。
+
+`prompt.size(0)` 是 batch 维；输入 `(1, S)` 时它恒为 1。长度用 `size(-1)`。
+
+`torch.empty(max_token_num)` 是一维，后面的 `buffer[:, :len_prompt]` 会报二维索引错误；缓冲区建成 `(1, max_len)`。
+
+返回整个 `buffer` 会把未初始化尾部一起返回；切片到 `pos` 并 `clone()`。
+
+`torch.load(config.checkpoint_dir)` 把目录当文件；`checkpoint_dir` 是目录，需要具体的 `checkpoint_5000.pt`。
+
+模型在 `config.device`，缓冲区与 `input_ids` 在 `device`；两者不同会报设备不一致，加载后调用 `model.to(device)`。
+
+`Tokenizer.encode` 对空字符串返回空列表，模型前向的形状 `(1, 0)` 会失败；空 prompt 直接拒绝，或者补一个 BOS。
+
