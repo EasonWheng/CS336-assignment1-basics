@@ -190,3 +190,15 @@ TinyStories 训练集 2,227,753,162 字节，编码后 541,229,169 个 token，�
 `Pool.imap` 按区间顺序返回数组，父进程按顺序拼接。TinyStories 总量约 1GB，直接 `np.concatenate` 后 `np.save` 即可。OWT 约 30 亿 token、6GB，父进程持有全部数组再拼接会翻倍内存；让工作进程各自写临时 `.npy`，父进程用 `np.lib.format.open_memmap` 分配最终文件，再逐段写入。
 
 Windows 的 `multiprocessing` 使用 spawn，工作函数与初始化函数必须是模块级函数，入口放在 `if __name__ == "__main__"` 下面。i7-12700H 有 6 个性能核，进程数取 6 左右；OWT 机器按内存与核心数调整。
+
+### 分块大小的实测
+
+用真实 TinyStories 分词器和 1、4、10MB 合成文本测峰值内存。`encode_iterable(f)` 按行读取，Python 峰值 0.1MB；`encode_iterable([chunk])` 把整段作为一个元素，1MB 文本峰值 85.9MB，4MB 文本 344MB，约 86MB 每 1MB，线性增长。
+
+`pre_tokenize(buffer)` 会为整个 buffer 生成匹配列表，buffer 多大，峰值就跟到多大。TinyStories 切 16 块时每块 139MB，单个 worker 峰值十几 GB；8 个进程同时运行，48GB 内存被吃光，机器蓝屏。
+
+把块数加到 1024，每块约 2MB，单 worker 峰值约 170MB，8 个进程约 1.4GB。OWT 12GB 切 1024 块每块约 12MB，单 worker 约 1GB，8 个进程约 8GB；内存更紧时继续加块，或让 worker 按行产出。
+
+`Pool` 的进程数由 `tokenize_file` 最后一个参数决定。调用里显式写了 `2`，所以只启动两个 worker；默认值是 8，去掉参数或改成 8 才会用满。
+
+1024 个任务每个都带一份 tokenizer，pickle 会重复传输；任务数大时用 `initializer` 让每个进程构造一次。`imap` 保持区间顺序，父进程按顺序写 `.bin`，再用 `open_memmap` 转成 `.npy`；`out.flush()` 之后 `del out`、`del raw`、`gc.collect()`，最后删除 `.bin`。
