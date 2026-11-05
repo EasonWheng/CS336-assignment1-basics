@@ -305,7 +305,7 @@ def train(config):
 
         if  (i + 1) % config.eval_interval == 0:
             val_loss = evaluate(model, val_dataset, config)
-            print(f"当前 val_loss = {val_loss}", flush=True)
+            print(f"[ val/验证 ] iteration {i + 1} | val_loss = {val_loss:.4f}", flush=True)
             val_loss_history.append(val_loss)
             last_val_loss = val_loss
             if run is not None:
@@ -323,7 +323,7 @@ def train(config):
                     {"train/loss": average_train_loss, "lr": lr, "iteration": i + 1},
                     step=i + 1,
                 )
-            print(f"该 log 区间的平均训练 train_loss: {train_loss_acc / iteration_i}", flush=True)
+            print(f"[ train/训练 ] 该 log 区间(iteration {i + 1})的平均训练 train_loss: {train_loss_acc / iteration_i}", flush=True)
             train_loss_acc, iteration_i = 0, 0
 
     path = save_checkpoint_if_due(model, optimizer, config.total_steps, config)
