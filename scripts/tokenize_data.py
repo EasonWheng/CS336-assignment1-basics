@@ -1,8 +1,10 @@
 import os
+from multiprocessing import Pool
 
 from itertools import islice
 
 from cs336_basics.tokenizer import Tokenizer
+from cs336_basics.pretokenization import find_chunk_boundaries
 import numpy as np
 import array
 
@@ -12,22 +14,27 @@ def build_tokenizer(vocab_path, merge_path, spectoken):
     return Tokenizer.from_files(vocab_path, merge_path, spectoken)
 
 
-def tokenize_file(tokenizer, file_path, save_path):
-    with open(file_path, "r", encoding="utf-8") as f:
-        tokens = tokenizer.encode_iterable(f)
-        ids = array.array("H")
-        total = 0
-        while True:
-            chunk = list(islice(tokens, 100_000))
-            if not chunk:
-                break
-            ids.extend(chunk)
-            total += len(chunk)
-            if total % 1_000_000 < 100_000:
-                print(f"已处理 token: {total}")
+def tokenize_worker(task):
+    file_path, start, end, tokenizer = task
 
-    arr = np.frombuffer(ids, dtype=np.uint16)
-    np.save(save_path, arr)
+    with open(file_path, "rb") as f:
+        f.seek(start)
+        chunk = f.read(end - start).decode("utf-8", errors="ignore")
+
+    tokens = tokenizer.encode_iterable(chunk)
+    return array.array("H").extend(tokens)
+
+
+def tokenize_file(tokenizer, file_path, save_path, worker, num_processes=8):
+    with open(file_path, "rb") as f:
+        boundaries = find_chunk_boundaries(file_path, 2 * num_processes, b"<|endoftext|>")
+
+    tasks = [(file_path, start, end, tokenizer) for start, end
+             in zip(boundaries[:-1], boundaries[1:])]
+    with Pool(processes=num_processes) as pool:
+        for ids in pool.imap(worker, tasks):
+
+
 
 
 def compression_ratio(token_path, text_path)->float:
