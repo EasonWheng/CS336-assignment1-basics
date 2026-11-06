@@ -17,8 +17,14 @@ def build_tokenizer(vocab_path, merge_path, spectoken):
     return Tokenizer.from_files(vocab_path, merge_path, spectoken)
 
 
+def init_worker(tokenizer):
+    global _TOKENIZER
+    _TOKENIZER = tokenizer
+
+
 def tokenize_worker(task):
-    file_path, start, end, tokenizer = task
+    file_path, start, end = task
+    tokenizer = _TOKENIZER
 
     with open(file_path, "rb") as f:
         f.seek(start)
@@ -41,15 +47,25 @@ def tokenize_worker(task):
 
 
 def tokenize_file(tokenizer, file_path, save_path, worker, num_processes=8):
+    file_size = os.path.getsize(file_path)
+    feasible_chunk_size = 4351080 * 2
+    desired_num_chunks = max(1, file_size // feasible_chunk_size)   # 避免在小文件上计算出 0
+    print(f"本次运行将文本分为 {desired_num_chunks} 块, 每块大小为 {feasible_chunk_size} Bytes")
+
     with open(file_path, "rb") as f:
-        boundaries = find_chunk_boundaries(f, 512, b"<|endoftext|>")
+        boundaries = find_chunk_boundaries(f, desired_num_chunks, b"<|endoftext|>")
     # desired_num_chunks 请务必不要设置地太小，否则可能造成内存爆炸，电脑蓝屏
 
-    tasks = [(file_path, start, end, tokenizer) for start, end
+    tasks = [(file_path, start, end) for start, end
              in zip(boundaries[:-1], boundaries[1:])]
+
     raw_path = save_path + ".bin"
-    os.remove(raw_path)     # 确保是最新的产物
-    with Pool(processes=num_processes) as pool:
+    try:
+        os.remove(raw_path)     # 确保是最新的产物
+    except:
+        pass
+
+    with Pool(processes=num_processes, initializer=init_worker, initargs=(tokenizer,)) as pool:
         with open(raw_path, "wb") as f:
             for ids in pool.imap(worker, tasks):
                 arr = np.asarray(ids, dtype="<u2")
@@ -120,6 +136,40 @@ def compression_ratio_tiny():
     compression_ratio(tiny_val_save, tiny_val)
 
 
+def tokenize_tiny(tokenize_or_not):
+    if tokenize_or_not:
+        build_tiny_BPE()
+    compression_ratio_tiny()
+    print_tokens_tiny(5)
+
+
+def build_owt_BPE():
+    vocab_owt = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\toknizer_params\vocab_owt.json"
+    merge_owt = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\toknizer_params\merges_owt.json"
+
+    tokenizer = build_tokenizer(vocab_owt, merge_owt, ["<|endoftext|>"])
+
+    owt_train = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\owt_train.txt"
+    owt_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\owt_train"
+    tokenize_file(tokenizer, owt_train, owt_save, tokenize_worker, 16)
+
+    owt_val = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\owt_valid.txt"
+    owt_val_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\owt_val"
+    tokenize_file(tokenizer, owt_val, owt_val_save, tokenize_worker, 16)
+
+
+def compression_ratio_owt():
+    tiny_train = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\owt_train.txt"
+    tiny_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\owt_train.npy"
+
+    tiny_val = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\owt_valid.txt"
+    tiny_val_save = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\owt_val.npy"
+    print("owt-train:")
+    compression_ratio(tiny_save, tiny_train)
+    print("owt-val:")
+    compression_ratio(tiny_val_save, tiny_val)
+
+
 def print_tokens(path, size):
     tokens = np.load(path, mmap_mode="r")
     print(f"何意味，分词结果前 {size} 个:")
@@ -132,7 +182,9 @@ def print_tokens_tiny(size):
     print_tokens(r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\tiny_val.npy", size)
 
 
+def print_tokens_owt(size):
+    pass
+
+
 if __name__ == "__main__":
-    build_tiny_BPE()
-    compression_ratio_tiny()
-    print_tokens_tiny(5)
+    tokenize_tiny(False)

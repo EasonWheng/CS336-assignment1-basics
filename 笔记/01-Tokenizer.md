@@ -202,3 +202,11 @@ Windows 的 `multiprocessing` 使用 spawn，工作函数与初始化函数必�
 `Pool` 的进程数由 `tokenize_file` 最后一个参数决定。调用里显式写了 `2`，所以只启动两个 worker；默认值是 8，去掉参数或改成 8 才会用满。
 
 1024 个任务每个都带一份 tokenizer，pickle 会重复传输；任务数大时用 `initializer` 让每个进程构造一次。`imap` 保持区间顺序，父进程按顺序写 `.bin`，再用 `open_memmap` 转成 `.npy`；`out.flush()` 之后 `del out`、`del raw`、`gc.collect()`，最后删除 `.bin`。
+
+### 并行分词的结果
+
+TinyStories 训练集切成 256 块，每块 8,702,160 字节，`num_processes=16`。从 10:09:08 到 10:29:39 生成 `data/tiny_train.npy`，用时 20 分 31 秒，541,229,347 个 token，聚合吞吐约 44 万 token/s。
+
+单进程那次从 10:29 运行到 15:55，墙钟 5 小时 26 分，平均约 27,750 token/s；按墙钟比较快约 15.8 倍。性能模式下纯单核约 53,000–56,000 token/s，按纯单核算约 8 倍。16 个 worker 超过 6 个性能核，单 worker 只有约 27,500 token/s，所以加速比低于 16。
+
+新文件比旧的 541,229,169 多 178 个 token，差 0.00003%，来自分块边界的处理；总量与压缩比不变。
