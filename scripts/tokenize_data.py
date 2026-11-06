@@ -183,8 +183,17 @@ def print_tokens_tiny(size):
 
 
 def print_tokens_owt(size):
-    pass
+    print_tokens(r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\owt_train.npy", size)
+    print_tokens(r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\data\owt_val.npy", size)
+
+
+def tokenize_owt(tokenize_or_not):
+    if tokenize_or_not:
+        build_owt_BPE()
+    compression_ratio_owt()
+    print_tokens_owt(5)
 
 
 if __name__ == "__main__":
     tokenize_tiny(False)
+    # tokenize_owt(True)

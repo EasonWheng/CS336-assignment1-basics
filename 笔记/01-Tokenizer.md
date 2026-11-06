@@ -199,9 +199,9 @@ Windows 的 `multiprocessing` 使用 spawn，工作函数与初始化函数必�
 
 把块数加到 1024，每块约 2MB，单 worker 峰值约 170MB，8 个进程约 1.4GB。OWT 12GB 切 1024 块每块约 12MB，单 worker 约 1GB，8 个进程约 8GB；内存更紧时继续加块，或让 worker 按行产出。
 
-`Pool` 的进程数由 `tokenize_file` 最后一个参数决定。调用里显式写了 `2`，所以只启动两个 worker；默认值是 8，去掉参数或改成 8 才会用满。
+`Pool` 的进程数由 `tokenize_file` 最后一个参数决定。第一次调用显式写了 `2`，只启动两个 worker；改成 16 后用满。默认值是 8，显式参数覆盖默认。
 
-1024 个任务每个都带一份 tokenizer，pickle 会重复传输；任务数大时用 `initializer` 让每个进程构造一次。`imap` 保持区间顺序，父进程按顺序写 `.bin`，再用 `open_memmap` 转成 `.npy`；`out.flush()` 之后 `del out`、`del raw`、`gc.collect()`，最后删除 `.bin`。
+任务里只放 `(file_path, start, end)`，`tokenizer` 通过 `Pool` 的 `initializer` 让每个进程构造一次，不再按任务 pickle。进程启动时把分词器存进模块级全局变量，worker 从全局取。`imap` 保持区间顺序，父进程按顺序写 `.bin`，再用 `open_memmap` 转成 `.npy`；`out.flush()` 之后 `del out`、`del raw`、`gc.collect()`，最后删除 `.bin`。
 
 ### 并行分词的结果
 
