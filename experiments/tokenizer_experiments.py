@@ -1,9 +1,8 @@
 # 从两个数据集各采样 10 篇、用两个分词器编码、比较 bytes/token
 import random
 import os
-from cs336_basics.tokenizer import Tokenizer
 from scripts.tokenize_data import build_tokenizer
-import numpy as np
+
 
 def sample_file(path, num):
     assert num > 0, "num must be > 0"
@@ -72,8 +71,8 @@ def tokenize_tiny_sample():
     raw_len = sum(len(text.encode("utf-8")) for text in doc)
     compression_ratio = raw_len / token_len
 
-    for i, text in enumerate(doc):
-        print(f"第 {i} 个样本:\n{text}")
+    # for i, text in enumerate(doc):
+    #     print(f"第 {i} 个样本:\n{text}")
 
     print(f"compression ratio = {compression_ratio:.4f}")
     return doc, result
@@ -92,8 +91,8 @@ def tokenize_owt_sample():
     raw_len = sum(len(text.encode("utf-8")) for text in doc)
     compression_ratio = raw_len / token_len
 
-    for i, text in enumerate(doc):
-        print(f"第 {i} 个样本:\n{text}")
+    # for i, text in enumerate(doc):
+    #     print(f"第 {i} 个样本:\n{text}")
 
     print(f"compression ratio = {compression_ratio:.4f}")
     return doc, result
@@ -113,14 +112,15 @@ def tokenize_cross_sample():
     raw_len = sum(len(text.encode("utf-8")) for text in doc)
     compression_ratio = raw_len / token_len
 
-    for i, text in enumerate(doc):
-        print(f"第 {i} 个样本:\n{text}")
+    # for i, text in enumerate(doc):
+    #     print(f"第 {i} 个样本:\n{text}")
 
     print(f"使用 TinyStories 分词器编码 OWT 样本的 compression ratio = {compression_ratio:.4f}")
     return doc, result
 
 
 if __name__ == "__main__":
-    tokenize_tiny_sample()
-    tokenize_owt_sample()
-    tokenize_cross_sample()     # 用 TinyStories 分词器编码 OWT 样本
+    for _ in range(10):
+        tokenize_tiny_sample()
+        tokenize_owt_sample()
+        tokenize_cross_sample()     # 用 TinyStories 分词器编码 OWT 样本
