@@ -62,7 +62,7 @@ def tokenize_file(tokenizer, file_path, save_path, worker, num_processes=8):
     raw_path = save_path + ".bin"
     try:
         os.remove(raw_path)     # 确保是最新的产物
-    except:
+    except FileNotFoundError:
         pass
 
     with Pool(processes=num_processes, initializer=init_worker, initargs=(tokenizer,)) as pool:
