@@ -30,7 +30,7 @@ def tokenize_worker(task):
         f.seek(start)
         chunk = f.read(end - start).decode("utf-8", errors="ignore")
 
-    tokens = tokenizer.encode_iterable([chunk])
+    tokens = tokenizer.encode_iterable(chunk.splitlines(keepends=True))
     ids = array.array("H")
     total = 0
     while True:
@@ -196,4 +196,4 @@ def tokenize_owt(tokenize_or_not):
 
 if __name__ == "__main__":
     tokenize_tiny(False)
-    # tokenize_owt(True)
+    tokenize_owt(True)
