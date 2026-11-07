@@ -1,6 +1,6 @@
 # OpenWebText 训练配置
 # 词表规模 32000，模型架构与训练步数沿用 TinyStories 的设置。
-# OWT 分词器已生成；训练前需要 data/owt_train.npy 与 data/owt_valid.npy。
+# OWT 分词器已生成；训练前需要 data/owt_train.npy 与 data/owt_val.npy。
 
 model:
   vocab_size: 32000
@@ -23,7 +23,7 @@ optimizer:
 
 data:
   train_data: data/owt_train.npy
-  val_data: data/owt_valid.npy
+  val_data: data/owt_val.npy
   batch_size: 32
   device: cpu
 

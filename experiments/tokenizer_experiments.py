@@ -120,7 +120,6 @@ def tokenize_cross_sample():
 
 
 if __name__ == "__main__":
-    for _ in range(10):
-        tokenize_tiny_sample()
-        tokenize_owt_sample()
-        tokenize_cross_sample()     # 用 TinyStories 分词器编码 OWT 样本
+    tokenize_tiny_sample()
+    tokenize_owt_sample()
+    tokenize_cross_sample()     # 用 TinyStories 分词器编码 OWT 样本
