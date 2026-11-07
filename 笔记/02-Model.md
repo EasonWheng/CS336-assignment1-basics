@@ -184,7 +184,7 @@ attn.q_proj.weight    ln1.weight    ffn.w1.weight
 - `TransformerBlockWithoutRMSNorm`：去掉块内 `ln1`、`ln2`，残差结构不变；传 `remove_all_norm=True` 时最终 norm 也去掉。
 - `TransformerBlockPostNorm`：注意力后 `x + Attn(x)` 再过 `ln1`，FFN 后 `z + FFN(z)` 再过 `ln2`。第一版两处都用了 `ln2`，`ln1` 没参与。
 - `TransformerBlockNoPE`：单独的 `MultiHeadSelfAttentionNoPE`，不应用 RoPE；reshape 和因果 mask 与 baseline 一致。
-- `TransformerBlockSiLU`：FFN 只有 `w1`、`w2`，`d_ff = 4*d_model`。第一版用配置里的 1344，参数量和 SwiGLU 对不上；现在在 Block 里固定成 4 倍。
+- `TransformerBlockSiLU`：FFN 只有 `w1`、`w2`，`d_ff = 4*d_model`。第一版用配置里的 1344，参数量和 SwiGLU 对不上；现在在 Block 里固定成 4 倍。配置文件里仍然写 `d_ff: 2048`，让记录和实际宽度一致，这个值当前不参与构造。
 
 `train.py` 增加 `--ablation`，四个值和 `build_ablation_model` 的键一致；`main` 把参数传给 `train`，不带参数时走 baseline `TransformerLM`。消融配置的 `resume` 设为 `null`，检查点目录和 run name 各自独立。
 
