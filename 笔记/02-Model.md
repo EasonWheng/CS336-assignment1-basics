@@ -171,6 +171,23 @@ attn.q_proj.weight    ln1.weight    ffn.w1.weight
 
 图 1 在 LM head 后面画了 Softmax，第一版照着添加了，两个 LM 测试都失败。`tests/_snapshots/test_transformer_lm.npz` 里存的是 logits：`min -15.59`，每行求和是 -47339 这种量级，概率的行和应当是 1。图里那步属于生成流程，模型边界停在 LM head。训练时交叉熵内部还会做一次 `log_softmax`。
 
+## 消融变体
+
+2026-11-07。`AblationLM` 接收一个 block 类，`ModuleList` 为每层构造独立实例；`build_ablation_model` 把字符串映射到四个 block 类，只构造选中的模型。
+
+第一版把四个 `AblationLM` 都放进字典，最后只返回一个，另外三个白构造。改成先选 block 类，再构造一次。
+
+`remove_all_norm` 控制最终 RMSNorm。第一版无论开关都创建 `ln_final`，layer_norm 消融的参数里还留着一个没用的 norm；现在 `remove_all_norm=True` 时不创建，`forward` 也跳过。
+
+四个变体：
+
+- `TransformerBlockWithoutRMSNorm`：去掉块内 `ln1`、`ln2`，残差结构不变；传 `remove_all_norm=True` 时最终 norm 也去掉。
+- `TransformerBlockPostNorm`：注意力后 `x + Attn(x)` 再过 `ln1`，FFN 后 `z + FFN(z)` 再过 `ln2`。第一版两处都用了 `ln2`，`ln1` 没参与。
+- `TransformerBlockNoPE`：单独的 `MultiHeadSelfAttentionNoPE`，不应用 RoPE；reshape 和因果 mask 与 baseline 一致。
+- `TransformerBlockSiLU`：FFN 只有 `w1`、`w2`，`d_ff = 4*d_model`。第一版用配置里的 1344，参数量和 SwiGLU 对不上；现在在 Block 里固定成 4 倍。
+
+`train.py` 增加 `--ablation`，四个值和 `build_ablation_model` 的键一致；`main` 把参数传给 `train`，不带参数时走 baseline `TransformerLM`。消融配置的 `resume` 设为 `null`，检查点目录和 run name 各自独立。
+
 ## 核算函数
 
 `cs336_basics/model.py:235` 起四个函数，计算写作业用的参数量、内存和 FLOPs，不参与模型前向。
