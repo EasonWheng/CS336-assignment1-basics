@@ -189,3 +189,9 @@ BPE 的每一轮依赖上一轮的结果，合并顺序本身是串行的。可�
 `tuple[bytes, ...]` 里每个元素是单独的单字节 `bytes` 对象，每个对象带 33 字节头部。把内部表示换成整数 token ID，只在最终输出时映射回 `bytes`，哈希和比较的开销都能降下来。输出接口仍然是 `dict[int, bytes]` 和 `list[tuple[bytes, bytes]]`，符合作业要求。
 
 两项加起来，同样的算法在 CPython 里还有两到三倍的余量。
+
+## 书面题答案（train_bpe_expts_owt）
+
+(a) 词表里最长的 token 是 64 字节，有两个：一个是重复的乱码字节，一个是 64 个连续短横线。这个长度合理，OpenWebText 里有大量 HTML 转义残留、二次编码的 UTF-8 和 ASCII 艺术分隔线，这些片段反复出现，BPE 会把它们合并成单个 token。最长 token 不承载多少语义，但能有效压缩重复的网页噪声。
+
+(b) TinyStories 词表 10000 项、9743 条合并，最长 token 15 字节，全量压缩比 4.116 bytes/token；OWT 词表 32000 项、31743 条合并，最长 token 64 字节，全量压缩比 4.371。语料更复杂时，更大的词表能容纳更多长片段，压缩比略高，但最长 token 会变成网页噪声；TinyStories 的词表更小，最长 token 是 `b' accomplishment'` 这类完整单词。
