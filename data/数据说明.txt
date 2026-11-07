@@ -1,5 +1,5 @@
 数据目录说明
-更新时间：2026-11-04
+更新时间：2026-11-07
 
 原始文本（不在版本库）
 - TinyStoriesV2-GPT4-train.txt：2,227,753,162 字节，15,600,056 行
@@ -10,18 +10,28 @@
 分词产物（不在版本库）
 - tiny_train.npy：541,229,169 个 token，uint16，1,082,458,466 字节，最大 ID 9999
 - tiny_val.npy：5,465,880 个 token，uint16，10,931,888 字节，最大 ID 9999
-- 分词器：toknizer_params/vocab_TinyStoriesV2-GPT4.json（10000 项），merges_TinyStoriesV2-GPT4.json（9743 对）
+- owt_train.npy：2,727,120,452 个 token，uint16，5,454,241,032 字节，最大 ID 31999
+- owt_val.npy：66,401,098 个 token，uint16，132,802,324 字节，最大 ID 31999
+
+分词器
+- TinyStories：toknizer_params/vocab_TinyStoriesV2-GPT4.json（10000 项），merges_TinyStoriesV2-GPT4.json（9743 对）
+- OWT：toknizer_params/vocab_owt.json（32000 项），merges_owt.json（31743 对）
 - 特殊 token：<|endoftext|>，ID 256
 
 压缩比
-- 训练集：4.116 bytes/token
-- 验证集：4.117 bytes/token
+- TinyStories 训练集 4.116 bytes/token，验证集 4.117
+- OWT 训练集 4.371 bytes/token，验证集 4.367
 
 生成方式
 - scripts/tokenize_data.py
 - Tokenizer.from_files(..., special_tokens=["<|endoftext|>"])
-- encode_iterable 流式编码，array.array("H") 累积，np.save 写入
+- encode_iterable 按行流式编码，array.array("H") 累积，np.save 写入
+- OWT 训练集 11.9GB，按 <|endoftext|> 切块，多进程编码后合并
 
-未生成
-- OWT 的 32000 词表分词器，以及 owt_train.npy、owt_valid.npy
-- OWT BPE 训练需要约 100GB 内存
+使用位置
+- TinyStories：configs/tinystories.yaml 指向 data/tiny_train.npy 与 data/tiny_val.npy
+- OWT：configs/owt.yaml 指向 data/owt_train.npy 与 data/owt_val.npy
+
+备注
+- 两个 OWT 分词文件在 2026-11-06 生成，本地 data/ 里已经有。
+- AutoDL 克隆实例的数据盘不带这两个文件，需要单独上传。

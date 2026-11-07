@@ -227,6 +227,6 @@ YAML 的 `1e-3` 解析成字符串。配置里写成 `1.0e-3`，`yaml.safe_load`
 
 ## 配置文件
 
-`configs/tinystories.yaml` 与 `configs/owt.yaml`。TinyStories 的词表 10000，OWT 的词表 32000，两者模型架构与优化器数值相同。OWT 的 BPE 需要约 100GB 内存，本机 48GB 内存不够。
+`configs/tinystories.yaml` 与 `configs/owt.yaml`。TinyStories 的词表 10000，OWT 的词表 32000，两者模型架构与优化器数值相同。OWT 的 BPE 已经训练完，峰值 RSS 8.58GB。
 
-`toknizer_params/` 里只有 TinyStories 的词表与合并文件。训练脚本消费 `data/tiny_train.npy` 与 `data/tiny_val.npy`，这两个文件由分词脚本生成。
+`toknizer_params/` 里有 TinyStories 与 OWT 的词表和合并文件。TinyStories 训练消费 `data/tiny_train.npy` 与 `data/tiny_val.npy`，OWT 训练消费 `data/owt_train.npy` 与 `data/owt_val.npy`。
