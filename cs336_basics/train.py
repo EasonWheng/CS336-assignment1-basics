@@ -4,7 +4,7 @@ import numpy as np
 import argparse
 import yaml
 
-from cs336_basics.model import TransformerLM
+from cs336_basics.model import TransformerLM, build_ablation_model
 from cs336_basics.nn_utils import cross_entropy, gradient_clipping
 from cs336_basics.optimizer import AdamW, learning_rate_schedule
 from cs336_basics.data import get_batch
@@ -44,6 +44,8 @@ def parse_args(argv=None):
     parser.add_argument("--resume", type=str, default=None)
     parser.add_argument("--device", type=str, default=None, choices=["cpu", "cuda"])
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--ablation", type=str, default=None, choices=["layer_norm_ablation",
+                        "pre_norm_ablation", "NoPE", "swiglu_ablation"])
     return parser.parse_args(argv)
 
 
@@ -260,7 +262,8 @@ def evaluate(model, val_data, config):
     return average_val_loss
 
 
-def train(config):
+def train(config,
+          ablation_type=None):
     run = None
     if getattr(config, "wandb_enabled", False):
         run = wandb.init(
@@ -273,7 +276,7 @@ def train(config):
     np.random.seed(config.seed)
 
     train_dataset, val_dataset = load_datasets(config)
-    model = build_model(config)
+    model = build_model(config) if ablation_type is None else build_ablation_model(ablation_type, config)
     optimizer = build_optimizer(model, config)
     iteration = load_checkpoint_if_needed(model, optimizer, config) # 如果有的话这里会恢复model
     device = config.device
@@ -346,7 +349,7 @@ def main():
     config = load_config(args.config, args)
     validate_config(config)
 
-    fnl_log = train(config)
+    fnl_log = train(config, args.ablation)
     plot_losses(
         fnl_log["train_history"],
         fnl_log["val_history"],
