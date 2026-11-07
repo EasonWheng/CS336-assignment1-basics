@@ -1,6 +1,6 @@
 # 文本生成
 
-2026-11-04 · 玩具张量验证；2026-11-07 · 40k 检查点生成
+2026-11-04 · 玩具张量验证
 
 `cs336_basics/generate.py`。解码一步取模型输出最后一个位置的 logits，经过温度缩放与 top-p 截断，再用 `torch.multinomial` 采样，把 token 追加到序列末尾。
 
@@ -37,29 +37,6 @@ prompt 编码成 token ID 后送入模型，取最后一个位置的 logits；�
 循环在 `model.eval()` 与 `torch.no_grad()` 下执行：`input_ids = buffer[:, :pos]` 是视图，模型输出 `(1, pos, V)`，取 `[:, -1, :]`；`sampling` 返回 `(1, 1)`；遇到 EOS 就停止；否则写入 `buffer[:, pos:pos+1]`，`pos` 加一。返回 `buffer[:, :pos].clone()`，不把未写入的尾部带出去。
 
 `handle_user_input` 负责字符串与张量之间的转换：按 `tiny` 或 `owt` 选择词表路径，`eos_id = tokenizer.encode("<|endoftext|>")[0]`；用 `parse_args(["--config", path])` 与 `load_config` 得到配置；`build_model` 构造模型；`torch.load(checkpoint_path, map_location=device)` 读检查点，`load_state_dict(ckpt["model"])`，`model.to(device)`。返回的闭包把 prompt 编码成 `(1, S)`，调用 `decoding`，再用 `tokenizer.decode` 转回文本。
-
-### 40k 检查点的生成
-
-用 `checkpoints/long40k/checkpoint_40000.pt`，TinyStories 词表，`max_token_num=256`，`temperature=0.9`，`top_p=0.9`。提示词都在训练分布内，长度一到两行。
-
-最完整的一篇是狐狸烤蛋糕：
-
-```text
-Once upon a time, a young fox wanted to bake a cake for his mother's birthday.
-```
-
-输出里有狐狸、小鸟、熊三个角色，先做蛋糕，熊来抢，熊哭，最后一起做并分享。句子简单，起承转合完整。另有一篇小狗 Max 帮松鼠，故事也完整，但写了“小狗用 long neck 够树上的松鼠”，身体属性错误。
-
-常见问题：
-
-- 蓝色石头后面写成红色石头，物体属性漂移
-- “猫帮老鼠搬奶酪”之后又出现另一只猫，代词和角色数量混乱
-- 小鸟的翅膀修好后又“去找小鸟的翅膀”，把身体部位当成独立物体
-- `Trump and Musk love eating the blue sky` 这种分布外提示词直接采样到 EOS，只返回提示词
-
-同一提示词在 `0.6 / 0.8` 和 `0.9 / 0.9` 下可能生成几乎相同的文本。提示词接近训练样本时，最高概率 token 本身可能超过 0.9，top-p 只留下一个候选，温度变化不足以改变采样结果。
-
-`decoding` 返回 prompt 加生成内容，所以终端会先显示一遍提示词。输出中再次出现提示词，是模型自己复读，不是字符串拼接错误。
 
 ### 踩过的坑
 
