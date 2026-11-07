@@ -240,16 +240,19 @@ class AblationLM(nn.Module):
                  num_layers: int,
                  rope_theta: float, device: torch.device | None = None,
                  dtype: torch.dtype | None = None,
-                 block: type[nn.Module] = TransformerBlock
+                 block: type[nn.Module] = TransformerBlock,
+                 remove_all_norm: bool = False
                  ):
         super().__init__()
+        self.remove_all_norm = remove_all_norm
         self.token_embeddings = Embedding(vocab_size, d_model, device=device, dtype=dtype)
         self.layers = nn.ModuleList(
             [block(d_model, num_heads, d_ff, context_length, rope_theta, device, dtype)
              for _ in range(num_layers)]
         )
         # THEN ... FINAL RMSNorm(layerNormalize)
-        self.ln_final = RMSNorm(d_model, device=device, dtype=dtype)
+        if not remove_all_norm:
+            self.ln_final = RMSNorm(d_model, device=device, dtype=dtype)
         # LAST Linear: OUTPUT EMBEDDING
         self.lm_head = Linear(d_model, vocab_size, device=device, dtype=dtype)
         # 注意：虽然作业手册最后画了 Softmax，但是拼装的时候在最后不要使用softmax
@@ -258,7 +261,9 @@ class AblationLM(nn.Module):
         embeddings = self.token_embeddings(in_indices)
         for layer in self.layers:
             embeddings = layer.forward(embeddings)
-        ln_final_out = self.ln_final.forward(embeddings)
+        ln_final_out = embeddings
+        if not self.remove_all_norm:
+            ln_final_out = self.ln_final.forward(embeddings)
         output_embeddings = self.lm_head.forward(ln_final_out)
         return output_embeddings
 
@@ -412,15 +417,14 @@ def build_ablation_model(type: str, config) -> AblationLM:
         "swiglu_ablation": TransformerBlockSiLU
     }
     block = model_dict[type]
-    model = AblationLM(config.d_model,
-                       config.num_heads,
-                       config.d_ff,
-                       config.vocab_size,
-                       config.context_length,
-                       config.num_layers,
-                       config.rope_theta,
-                       config.device,
-                       block=block)
+    if type == "layer_norm_ablation":
+        model = AblationLM(config.d_model,config.num_heads,config.d_ff,config.vocab_size,
+                           config.context_length, config.num_layers, config.rope_theta, config.device,
+                           block=block, remove_all_norm=True)
+    else:
+        model = AblationLM(config.d_model,config.num_heads,config.d_ff,config.vocab_size,
+                           config.context_length, config.num_layers, config.rope_theta, config.device,
+                           block=block)
     return model
 
 
