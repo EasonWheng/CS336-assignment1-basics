@@ -133,3 +133,23 @@ def handle_user_input(choose_tokenizer, config_path, checkpoint_path, max_token_
         return tokenizer.decode(output_ids[0].tolist())
 
     return exec_decode
+
+
+def llm_tiny():
+    config_path = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\configs\tinystories_long40k.yaml"
+    checkpoint_path = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\checkpoints\long40k\checkpoint_40000.pt"
+    max_token_num = 256
+    temperature = 0.9
+    top_p = 0.9
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    llm_in = handle_user_input("tiny", config_path, checkpoint_path, max_token_num, temperature, top_p, device)
+    return llm_in
+
+
+if __name__ == "__main__":
+    i = 1
+    while True:
+        llm = llm_tiny()
+        user_input = input(f"请输入你的第 {i} 句提示词🌹--<-<-<@: ")
+        print(llm(user_input))
+        i += 1

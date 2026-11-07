@@ -232,6 +232,198 @@ class TransformerLM(nn.Module):
         return output_embeddings
 
 
+# 下面定义的类为消融实验使用
+class AblationLM(nn.Module):
+    def __init__(self, d_model: int, num_heads: int, d_ff: int,
+                 vocab_size: int,
+                 context_length: int,
+                 num_layers: int,
+                 rope_theta: float, device: torch.device | None = None,
+                 dtype: torch.dtype | None = None,
+                 block: type[nn.Module] = TransformerBlock
+                 ):
+        super().__init__()
+        self.token_embeddings = Embedding(vocab_size, d_model, device=device, dtype=dtype)
+        self.layers = nn.ModuleList(
+            [block(d_model, num_heads, d_ff, context_length, rope_theta, device, dtype)
+             for _ in range(num_layers)]
+        )
+        # THEN ... FINAL RMSNorm(layerNormalize)
+        self.ln_final = RMSNorm(d_model, device=device, dtype=dtype)
+        # LAST Linear: OUTPUT EMBEDDING
+        self.lm_head = Linear(d_model, vocab_size, device=device, dtype=dtype)
+        # 注意：虽然作业手册最后画了 Softmax，但是拼装的时候在最后不要使用softmax
+
+    def forward(self, in_indices: Int[Tensor, " batch_size sequence_length"]):
+        embeddings = self.token_embeddings(in_indices)
+        for layer in self.layers:
+            embeddings = layer.forward(embeddings)
+        ln_final_out = self.ln_final.forward(embeddings)
+        output_embeddings = self.lm_head.forward(ln_final_out)
+        return output_embeddings
+
+
+class TransformerBlockWithoutRMSNorm(nn.Module):
+    """
+    Without RMSNorm? Something is seriously wrong!
+    """
+    def __init__(self, d_model: int, num_heads: int, d_ff: int,
+                 max_seq_len: int, theta: float, device: torch.device | None = None, dtype: torch.dtype |None = None):
+        super().__init__()
+        # self.ln1 = RMSNorm(d_model, device=device, dtype=dtype)
+        # self.ln2 = RMSNorm(d_model, device=device, dtype=dtype)
+        self.rope = RotaryPositionalEmbedding(theta, d_model // num_heads, max_seq_len, device=device, dtype=dtype)
+        self.attn = MultiHeadSelfAttention(d_model, num_heads, self.rope, device=device, dtype=dtype)
+        self.ffn = SwiGLU(d_model, d_ff, device=device, dtype=dtype)
+
+    def forward(self, in_features: Float[Tensor, " ... sequence_length d_model"]):
+        out_rsm1 = in_features
+        token_positions = torch.arange(in_features.shape[-2], device=in_features.device, dtype=torch.long)
+        out_attn = self.attn.forward(out_rsm1, token_positions)
+        adder1 = in_features + out_attn
+        out_rsm2 = adder1
+        out_ffn = self.ffn.forward(out_rsm2)
+        fnl_result = adder1 + out_ffn
+        return fnl_result
+
+
+class TransformerBlockPostNorm(nn.Module):
+    """
+    Post-Norm 666
+    """
+    def __init__(self, d_model: int, num_heads: int, d_ff: int,
+                 max_seq_len: int, theta: float, device: torch.device | None = None, dtype: torch.dtype |None = None):
+        super().__init__()
+        self.ln1 = RMSNorm(d_model, device=device, dtype=dtype)
+        self.ln2 = RMSNorm(d_model, device=device, dtype=dtype)
+        self.rope = RotaryPositionalEmbedding(theta, d_model // num_heads, max_seq_len, device=device, dtype=dtype)
+        self.attn = MultiHeadSelfAttention(d_model, num_heads, self.rope, device=device, dtype=dtype)
+        self.ffn = SwiGLU(d_model, d_ff, device=device, dtype=dtype)
+
+    def forward(self, in_features: Float[Tensor, " ... sequence_length d_model"]):
+        token_positions = torch.arange(in_features.shape[-2], device=in_features.device, dtype=torch.long)
+        out_attn = self.attn.forward(in_features, token_positions)
+        adder1 = in_features + out_attn
+        out_rsm1 = self.ln1.forward(adder1)
+        out_ffn = self.ffn.forward(out_rsm1)
+        adder2 = out_rsm1 + out_ffn
+        return self.ln2(adder2)
+
+
+class MultiHeadSelfAttentionNoPE(nn.Module):
+    def __init__(self, d_model: int, num_heads: int,
+                 device=None, dtype=None):
+        super().__init__()
+        self.num_heads = num_heads
+        self.d_kv = d_model // num_heads      # dk == dv
+
+        self.q_proj = Linear(d_model, d_model, device=device, dtype=dtype)
+        self.k_proj = Linear(d_model, d_model, device=device, dtype=dtype)
+        self.v_proj = Linear(d_model, d_model, device=device, dtype=dtype)
+        self.output_proj = Linear(d_model, d_model, device=device, dtype=dtype)
+
+    def forward(self, in_features: Float[Tensor, " ... sequence_length d_model"],
+                token_positions: Int[Tensor, " ... sequence_length"] | None = None):
+        Q = self.q_proj.forward(in_features)
+        K = self.k_proj.forward(in_features)
+        V = self.v_proj.forward(in_features)
+
+        Q = rearrange(Q, "... sequence_length (head dkv) -> ... head sequence_length dkv", head=self.num_heads)
+        K = rearrange(K, "... sequence_length (head dkv) -> ... head sequence_length dkv", head=self.num_heads)
+        V = rearrange(V, "... sequence_length (head dkv) -> ... head sequence_length dkv", head=self.num_heads)
+
+        # if self.rope is not None and token_positions is not None:
+        #     Q = self.rope.forward(Q, token_positions)
+        #     K = self.rope.forward(K, token_positions)
+        mask = torch.tril(torch.ones(in_features.size(-2), in_features.size(-2), dtype=torch.bool, device=in_features.device))
+        tmp = rearrange(scaled_dot_product_attention(Q, K, V, mask),
+                        "... head sequence_length dkv -> ... sequence_length (head dkv)")
+        return self.output_proj.forward(tmp)
+
+
+class TransformerBlockNoPE(nn.Module):
+    """
+    NoPE! Without Rotary Positional Embedding! No RoPE!
+    """
+    def __init__(self, d_model: int, num_heads: int, d_ff: int,
+                 max_seq_len: int, theta: float, device: torch.device | None = None, dtype: torch.dtype |None = None):
+        super().__init__()
+        self.ln1 = RMSNorm(d_model, device=device, dtype=dtype)
+        self.ln2 = RMSNorm(d_model, device=device, dtype=dtype)
+        # self.rope = RotaryPositionalEmbedding(theta, d_model // num_heads, max_seq_len, device=device, dtype=dtype)
+        self.attn = MultiHeadSelfAttentionNoPE(d_model, num_heads, device=device, dtype=dtype)
+        self.ffn = SwiGLU(d_model, d_ff, device=device, dtype=dtype)
+
+    def forward(self, in_features: Float[Tensor, " ... sequence_length d_model"]):
+        out_rsm1 = self.ln1.forward(in_features)
+        token_positions = torch.arange(in_features.shape[-2], device=in_features.device, dtype=torch.long)
+        out_attn = self.attn.forward(out_rsm1, token_positions)
+        adder1 = in_features + out_attn
+        out_rsm2 = self.ln2.forward(adder1)
+        out_ffn = self.ffn.forward(out_rsm2)
+        fnl_result = adder1 + out_ffn
+        return fnl_result
+
+
+class FFNSiLU(nn.Module):
+    """
+    实现 SiLU 前馈网络
+    """
+    def __init__(self, d_model: int, d_ff: int, device=None, dtype=None):
+        super().__init__()
+        self.w1 = Linear(d_model, d_ff, device=device, dtype=dtype)
+        # self.w3 = Linear(d_model, d_ff, device=device, dtype=dtype)
+        self.w2 = Linear(d_ff, d_model, device=device, dtype=dtype)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.w2(SiLU(self.w1(x)))
+
+
+class TransformerBlockSiLU(nn.Module):
+    """
+    注意：FFN只有2个矩阵了！ dff = 4 * dmodel！
+    """
+    def __init__(self, d_model: int, num_heads: int, d_ff: int,
+                 max_seq_len: int, theta: float, device: torch.device | None = None, dtype: torch.dtype |None = None):
+        super().__init__()
+        self.ln1 = RMSNorm(d_model, device=device, dtype=dtype)
+        self.ln2 = RMSNorm(d_model, device=device, dtype=dtype)
+        self.rope = RotaryPositionalEmbedding(theta, d_model // num_heads, max_seq_len, device=device, dtype=dtype)
+        self.attn = MultiHeadSelfAttention(d_model, num_heads, self.rope, device=device, dtype=dtype)
+        # self.ffn = FFNSiLU(d_model, d_ff, device=device, dtype=dtype)
+        self.ffn = FFNSiLU(d_model, 4 * d_model, device=device, dtype=dtype)
+
+    def forward(self, in_features: Float[Tensor, " ... sequence_length d_model"]):
+        out_rsm1 = self.ln1.forward(in_features)
+        token_positions = torch.arange(in_features.shape[-2], device=in_features.device, dtype=torch.long)
+        out_attn = self.attn.forward(out_rsm1, token_positions)
+        adder1 = in_features + out_attn
+        out_rsm2 = self.ln2.forward(adder1)
+        out_ffn = self.ffn(out_rsm2)
+        fnl_result = adder1 + out_ffn
+        return fnl_result
+
+
+def build_ablation_model(type: str, config) -> AblationLM:
+    model_dict = {
+        "layer_norm_ablation": TransformerBlockWithoutRMSNorm,
+        "pre_norm_ablation": TransformerBlockPostNorm,
+        "NoPE": TransformerBlockNoPE,
+        "swiglu_ablation": TransformerBlockSiLU
+    }
+    block = model_dict[type]
+    model = AblationLM(config.d_model,
+                       config.num_heads,
+                       config.d_ff,
+                       config.vocab_size,
+                       config.context_length,
+                       config.num_layers,
+                       config.rope_theta,
+                       config.device,
+                       block=block)
+    return model
+
+
 def transformer_accounting(d_model, num_layers, d_ff, vocab_size):
     """
     用于计算可训练参数数量，不是计算内存消耗，计算内存消耗请使用下面一个函数！
