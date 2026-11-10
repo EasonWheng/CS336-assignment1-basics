@@ -1,0 +1,41 @@
+# OWT 4090 预实验：8 层代理模型的学习率扫描
+# 5000 步 × batch 16 × context 512 = 40.96M token。
+
+model:
+  vocab_size: 32000
+  context_length: 512
+  d_model: 768
+  num_layers: 8
+  num_heads: 12
+  d_ff: 2048
+  rope_theta: 10000.0
+
+optimizer:
+  max_lr: 3.0e-4
+  min_lr: 3.0e-5
+  warmup_steps: 200
+  total_steps: 5000
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  weight_decay: 0.01
+  grad_clip: 1.0
+
+data:
+  train_data: data/owt_train.npy
+  val_data: data/owt_val.npy
+  batch_size: 16
+  device: cuda
+
+run:
+  seed: 42
+  log_interval: 10
+  eval_interval: 100
+  eval_batches: 20
+  wandb_enabled: false
+  wandb_project: cs336-a1
+  run_name: owt_proxy_8l768_lr3e-4_5k
+
+checkpoint:
+  checkpoint_dir: checkpoints/pre/owt_proxy_8l768_lr3e-4_5k
+  checkpoint_interval: 5000
+  resume: null

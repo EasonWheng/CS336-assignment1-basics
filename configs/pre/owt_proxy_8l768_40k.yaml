@@ -1,0 +1,42 @@
+# OWT 4090 预实验：8 层、768 维代理模型
+# batch 16 × context 512 × 40000 = 327.68M token，与 TinyStories 40k 的 token 预算一致。
+# 约 106M 参数，4090 估算显存约 9.7GB；正式大模型仍在 B200 上跑。
+
+model:
+  vocab_size: 32000
+  context_length: 512
+  d_model: 768
+  num_layers: 8
+  num_heads: 12
+  d_ff: 2048
+  rope_theta: 10000.0
+
+optimizer:
+  max_lr: 5.0e-4
+  min_lr: 5.0e-5
+  warmup_steps: 1000
+  total_steps: 40000
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  weight_decay: 0.01
+  grad_clip: 1.0
+
+data:
+  train_data: data/owt_train.npy
+  val_data: data/owt_val.npy
+  batch_size: 16
+  device: cuda
+
+run:
+  seed: 42
+  log_interval: 10
+  eval_interval: 200
+  eval_batches: 20
+  wandb_enabled: false
+  wandb_project: cs336-a1
+  run_name: owt_proxy_8l768_lr5e-4
+
+checkpoint:
+  checkpoint_dir: checkpoints/pre/owt_proxy_8l768_lr5e-4
+  checkpoint_interval: 2000
+  resume: null
