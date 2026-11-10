@@ -146,10 +146,28 @@ def llm_tiny():
     return llm_in
 
 
+def llm_owt():
+    config_path = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\configs\owt_40k.yaml"
+    checkpoint_path = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\checkpoints\owt_40k\checkpoint_40000.pt"
+    max_token_num = 256
+    temperature = 0.9
+    top_p = 0.9
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    llm_in = handle_user_input("owt", config_path, checkpoint_path, max_token_num, temperature, top_p, device)
+    return llm_in
+
+
 if __name__ == "__main__":
     i = 1
-    while True:
+    which_model =input("Enter which model to use: ")
+    if which_model == "tiny":
         llm = llm_tiny()
+    elif which_model == "owt":
+        llm = llm_owt()
+    else:
+        raise Exception("Unknown model")
+
+    while True:
         user_input = input(f"请输入你的第 {i} 句提示词🌹--<-<-<@: ")
         print(llm(user_input))
         i += 1
