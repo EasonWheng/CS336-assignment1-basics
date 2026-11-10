@@ -319,7 +319,7 @@ def train(config,
             if run is not None:
                 wandb.log({"val/loss": val_loss}, step=i + 1)
 
-        if (i + 1) % config.checkpoint_interval == 0:
+        if (i + 1) % config.checkpoint_interval == 0 and i != config.total_steps - 1:
             paths.append(save_checkpoint_if_due(model, optimizer, i + 1, config))
 
         if (i + 1) % config.log_interval == 0:
