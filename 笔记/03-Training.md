@@ -31,6 +31,12 @@ loss = (torch.log(sum_exp) - Ui_x).mean()
 
 测试第二段把输入乘 1000，先减最大值把 `exp` 的输入拉回 0 附近，结果和 `F.cross_entropy` 相差在 1e-4 以内。
 
+## 困惑度
+
+每 token 的困惑度是 `PPL = exp(mean CE)`。OWT 的 4.1755 对应 65.07，TinyStories 的 1.3514 对应 3.86。
+
+验证集 loss 估计的是交叉熵 `H(P) + KL(P||Q)`，真实数据熵 `H(P)` 没有单独算。跨分词器比较用 `bits/byte = loss / (ln 2 · bytes/token)`，具体数字在 `06-训练记录.md`。
+
 ## 学习率
 
 `experiments/lr_tuning.py` 抄的是手册 4.2.1 的式 (20)：

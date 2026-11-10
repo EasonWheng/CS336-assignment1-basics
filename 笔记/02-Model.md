@@ -82,6 +82,8 @@ return self.w2(SiLU(self.w1(x)) * self.w3(x))
 
 初始化不用另写，三个 Linear 各自按 3.3.1 的规则创建参数。
 
+参数量匹配的口径：无门控 FFN 用 `d_ff = 4D`；有门控的三个矩阵各 `D × d_ff`，取 `d_ff = 8/3 D`，两边都约等于 `8D²`。SiLU 消融因此用 `d_ff = 2048`。
+
 `d_ff` 由构造参数传入，测试传 128（`tests/conftest.py:247`）。`(8/3) × 64 ≈ 171`，按最近的 64 倍数会计算成 192，固定成自动推导的话 `load_state_dict` 形状对不上。
 
 adapter 用 `.data` 直接赋值三份权重（`tests/adapters.py:93`），没有通过 `state_dict`。
@@ -125,6 +127,8 @@ pair_x[..., 0] = d_2
 
 MHA 里 Q 是 `(batch, head, seq, d_k)`，测试传的 `token_positions` 是 `(1, seq)`，cos 取出来 `(1, seq, half)`，靠广播覆盖 batch 和 head 两维。
 
+`token id` 越大，旋转角越大；维度越高，频率越低，转得越慢。cos/sin 缓冲不参与优化，`register_buffer(..., persistent=False)` 不把它写进 `state_dict`。
+
 ## 因果多头自注意力
 
 `cs336_basics/model.py:147`。四个投影都是 `Linear(d_model, d_model)`，属性名和参考权重一致：`q_proj`、`k_proj`、`v_proj`、`output_proj`。投影后拆分成多个注意力头：
@@ -144,6 +148,8 @@ mask = torch.tril(torch.ones(seq, seq, dtype=torch.bool, device=in_features.devi
 ```
 
 第一版没写 `device`，CPU 上测试全过，迁移到 GPU 会在加掩码时报设备不一致。
+
+mask 的 True 表示可见，False 在 softmax 之前填 `-inf`；因果 mask 是下三角。
 
 ## TransformerBlock
 
@@ -192,7 +198,7 @@ attn.q_proj.weight    ln1.weight    ffn.w1.weight
 
 `cs336_basics/model.py:235` 起四个函数，只算参数量、内存和 FLOPs，不碰前向。
 
-参数量每块 `d_model × (4·d_model + 3·d_ff + 2)`，块外加两份 `vocab_size × d_model` 和 `d_model`。GPT-2 XL 配置得到 1,640,452,800，48 个 block 占 90.2%。乘 4 字节是 6,561,811,200 B，约 6.56 GB 或 6.11 GiB。
+参数量每块 `d_model × (4·d_model + 3·d_ff + 2)`，块外加两份 `vocab_size × d_model` 和 `d_model`。按块拆：RMSNorm `D`、QKV `3D²`、输出投影 `D²`、两个 norm 各 `D`、FFN `3D·d_ff`，合起来 `2D + 4D² + 3D·d_ff`。GPT-2 XL 配置得到 1,640,452,800，48 个 block 占 90.2%。乘 4 字节是 6,561,811,200 B，约 6.56 GB 或 6.11 GiB。
 
 `block_matmul_FLOPs` 第一版漏了 Q、K、V 三个投影，只计算分数矩阵、输出投影和 FFN，单块得 54,106,521,600。补上 `6·n·d_model²` 之后单块 69,835,161,600，整模型加 LM head 是 3,516,769,894,400，约 3.52 TFLOPs。
 
@@ -204,7 +210,7 @@ attn.q_proj.weight    ln1.weight    ffn.w1.weight
 2 * n * d_model * (4 * d_model + 2 * n + 3 * d_ff)
 ```
 
-代入配置得 69,835,161,600，和逐项相加一致。这个式子已经包含 QKV 投影，不需要另加。全部是前向的量，训练按三倍估。
+代入配置得 69,835,161,600，和逐项相加一致。单块前向写作 `8LD² + 4L²D + 6LD·d_ff = 2LD(4D + 2L + 3d_ff)`。这个式子已经包含 QKV 投影，不需要另加。全部是前向的量，训练按三倍估。
 
 ### 规模和上下文怎么改占比
 

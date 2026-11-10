@@ -4,6 +4,14 @@
 
 `train_bpe` 学出 vocab 和 merges 之后，剩下的事都在 `Tokenizer` 里：文本进来换成一串 id，id 出去换回文本。代码在 `cs336_basics/tokenizer.py`。
 
+## BPE 训练
+
+`train_bpe(input_path, vocab_size, special_tokens)` 返回 `(vocab, merges)`。`vocab` 是 `dict[int, bytes]`，0–255 是单字节，256 起是特殊 token；`merges` 是 `list[tuple[bytes, bytes]]`。encode 用 `merges` 建 rank 表，decode 只查 `vocab`。
+
+文件先按 `<|endoftext|>` 的边界切成 chunk。worker 在 `process_chunk` 里预分词，把每个预 token 转成 `tuple[bytes, ...]` 并计数；父进程用 `Pool.starmap` 收回各块的 `local_counts`，再合成 `indices`。特殊 token 不进这个计数表，单独映射到 id。
+
+合并循环维护 `global_counts: dict[pair, [频次, 包含该 pair 的词集合]]`。每轮选频次最高的 pair，平局取字典序更大的；`merge()` 重建受影响的词，更新相邻 pair。词表大小达到 `vocab_size` 后返回。
+
 ## 类里保存了什么
 
 构造函数收 vocab 和 merges，类里再建两个字典：
@@ -158,6 +166,8 @@ ID 用 `array.array("H")` 累积，每个元素占 2 字节。编码结束后用
 `np.save` 写入 `.npy` 头与二进制数据，`np.load` 从头里读出 dtype 与形状。刚才验证：`np.save("x", arr)` 生成 `x.npy`，`np.load("x.npy", mmap_mode="r")` 返回 `memmap`，dtype 为 `uint16`，形状与保存前一致。
 
 `scripts/tokenize_data.py` 拆成两个函数。`build_tokenizer(vocab_path, merge_path, special_tokens)` 构造分词器；`tokenize_file(tokenizer, file_path, save_path)` 接收分词器、文本路径与输出路径。分词器通过参数传入，函数不依赖全局变量。`tokenize_file` 用 `islice` 每次取 10 万个 token，累计到 `array.array("H")`，每 100 万 token 输出一次进度。
+
+worker 的步骤是：`find_chunk_boundaries` 返回偏移列表，`task = (start, end)`；worker 打开文件，`seek(start)` 后读 `end - start` 字节，`decode("utf-8", errors="ignore")`；`encode_iterable` 产出的 id 用 `array("H")` 累积，最后 `np.frombuffer(..., dtype=np.uint16)`、`np.save` 写入 `.npy`。
 
 `f.read()` 传给 `encode_iterable` 会按字符遍历整个字符串，缓冲区反复处理，复杂度接近平方；大文件必须传入文件对象。
 
