@@ -276,7 +276,12 @@ def train(config,
     np.random.seed(config.seed)
 
     train_dataset, val_dataset = load_datasets(config)
-    model = build_model(config) if ablation_type is None else build_ablation_model(ablation_type, config)
+    model = (
+        build_model(config) if ablation_type is None
+        else build_ablation_model(ablation_type, config)
+    )
+    model.compile()
+
     optimizer = build_optimizer(model, config)
     iteration = load_checkpoint_if_needed(model, optimizer, config) # 如果有的话这里会恢复model
     device = config.device
@@ -301,7 +306,7 @@ def train(config,
         loss.backward()     # 计算梯度
         gradient_clipping(model.parameters(), config.grad_clip)
         optimizer.step()
-        last_train_loss = loss.item()
+        last_train_loss = loss.detach()
         train_loss_acc += last_train_loss
 
         iteration_i += 1
@@ -318,7 +323,7 @@ def train(config,
             paths.append(save_checkpoint_if_due(model, optimizer, i + 1, config))
 
         if (i + 1) % config.log_interval == 0:
-            average_train_loss = train_loss_acc / iteration_i
+            average_train_loss = (train_loss_acc / iteration_i).item()
             train_loss_history.append(average_train_loss)
             # 打印日志
             if run is not None:
@@ -326,12 +331,14 @@ def train(config,
                     {"train/loss": average_train_loss, "lr": lr, "iteration": i + 1},
                     step=i + 1,
                 )
-            print(f"[ train/训练 ] 该 log 区间(iteration {i + 1})的平均训练 train_loss: {train_loss_acc / iteration_i}", flush=True)
+            print(f"[ train/训练 ] 该 log 区间(iteration {i + 1})的平均训练 train_loss: {average_train_loss}", flush=True)
             train_loss_acc, iteration_i = 0, 0
 
     path = save_checkpoint_if_due(model, optimizer, config.total_steps, config)
     if run is not None:
         wandb.finish()
+
+    last_train_loss = last_train_loss.item() if last_train_loss is not None else None
 
     return {
         "iteration": config.total_steps,
