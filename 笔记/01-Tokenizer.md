@@ -6,7 +6,7 @@
 
 ## 类里保存了什么
 
-外面传进来 vocab 和 merges，类里另外留两张表：
+构造函数收 vocab 和 merges，类里再建两个字典：
 
 ```python
 self.reversed_vocab = {v: k for k, v in self.vocab.items()}
@@ -15,7 +15,7 @@ self.merge_ranks = {pair: i for i, pair in enumerate(self.merges)}
 
 `reversed_vocab` 给 encode 收尾用，拿到一串字节要马上知道它是第几号。`merge_ranks` 记每个 pair 的名次，名次就是它在 merges 里的下标，越小越早合并。判断一个 pair 该不该合并，看它在不在这个字典里就够了。
 
-两张表都放在 `__init__` 里创建。encode 每处理一个预 token 都要查询，放进构造函数省得每次重新计数。`reversed_vocab` 的前提是 vocab 里没有两个 id 对应同一串字节，训练出来的 vocab 正好满足。
+两个字典都在 `__init__` 里建。encode 每处理一个预 token 都要查询，放进构造函数省得每次重新计数。`reversed_vocab` 的前提是 vocab 里没有两个 id 对应同一串字节，训练出来的 vocab 正好满足。
 
 保存文件用 latin-1。0–255 每个字节都能对应到 U+0000–U+00FF 的一个字符，读取回来再转回字节不会丢东西。写入 JSON 的时候带 `ensure_ascii=True`，Windows 上 `open` 记得设置 `encoding="utf-8"` 和 `newline="\n"`，默认编码是 cp936。
 
@@ -87,7 +87,7 @@ if buffer:
     yield from self.encode(buffer)
 ```
 
-切点不能乱挑，有三个条件。
+切点得满足三个条件。
 
 得是某个 match 的 `start()`。正则表达式从左往右执行，前面的判定已经定了，只有最后一个会被后来的 chunk 续长。切在 match 起点上，最后一个 match 就完整留在缓冲区里。
 
@@ -112,13 +112,13 @@ string = b"".join(byte_list).decode("utf-8", errors="replace")
 
 先拼接再解码。单个 token 里可能只有半个 UTF-8 字符，🙃 是四个字节，BPE 很可能把它切分成两个 token，单独解码其中一个直接抛出 `UnicodeDecodeError`。拼接成完整字节流就没有问题。`errors="replace"` 是给本来就不合法的输入准备的，tiktoken 也这么处理。
 
-## 测试环境
+## Windows 上的测试环境
 
 `tests/test_tokenizer.py` 第一行就 `import resource`，这模块只有 Unix 有。两个内存测试在 Windows 上会被 `skipif` 跳过，可 import 发生在收集阶段，还是报 `ModuleNotFoundError`。往 `.venv/Lib/site-packages/` 放入一个 `resource.py`，里面放入一个 `RLIMIT_AS` 和两个抛出 `NotImplementedError` 的函数就够了，跳过的测试根本不会调。
 
 另一个错误是 `KeyError: '臓'`。测试里的 helper 读 `gpt2_merges.txt` 没有设置 encoding，中文 Windows 默认 cp936，UTF-8 的 fixture 直接被解码成乱码，解出来的字符不在 `gpt2_byte_decoder` 表里。`gpt2_vocab.json` 全是 `\uXXXX` 转义，纯 ASCII，所以只有 merges 这一行出现问题。`setx PYTHONUTF8 1`，然后彻底退出 PyCharm 再开，`open()` 就默认 UTF-8 了。
 
-## 结果
+## 跑测试
 
 ```text
 cd C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics
@@ -127,7 +127,7 @@ cd C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics
 
 23 passed，2 skipped，跳过的是两个内存测试。
 
-出问题的时候按这个顺序看：`test_roundtrip_*` 只依赖 encode 和 decode 的字节往返，先让这条通过；`test_*_matches_tiktoken` 逐 id 对比，合并顺序和切点的毛病都在这暴露；`test_encode_iterable_*` 放最后。
+测试挂了先看这几条：`test_roundtrip_*` 只依赖 encode 和 decode 的字节往返，先让这条通过；`test_*_matches_tiktoken` 逐 id 对比，合并顺序和切点的毛病都在这暴露；`test_encode_iterable_*` 放最后。
 
 训练产物在 `toknizer_params/`，`vocab_TinyStoriesV2-GPT4.json` 一万项，`merges_TinyStoriesV2-GPT4.json` 9743 条。代码在 `EasonWheng/CS336-assignment1-basics`。
 
@@ -139,7 +139,7 @@ cd C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics
 
 ID 用 `array.array("H")` 累积，每个元素占 2 字节。编码结束后用 `np.frombuffer(ids, dtype=np.uint16)` 转成 NumPy 数组，调用 `np.save` 写入 `data/tiny_train.npy` 与 `data/tiny_val.npy`。`configs/tinystories.yaml` 的 `train_data` 与 `val_data` 指向这两个文件。
 
-### API 用法
+### 几个 API 的实际行为
 
 | API | 作用 | 参数与返回 |
 | --- | --- | --- |
@@ -165,7 +165,7 @@ ID 用 `array.array("H")` 累积，每个元素占 2 字节。编码结束后用
 
 调用验证集时写成 `tokenize_file(tiny_val_save, tiny_val_save)`，把输出路径当成输入文本。第一次运行时 `open` 抛出 `FileNotFoundError`；生成过文件后会把二进制 `.npy` 当成 UTF-8 文本读取。输入路径与输出路径分开传。
 
-分词器产物检查：词表 10000 项，ID 0–9999；合并 9743 对；特殊 token `<|endoftext|>` 的 ID 是 256；0–255 对应单字节；每个合并对的两部分在合并时已经存在，9743 个结果全部在词表里，没有重复；词表等于基础字节、合并结果与特殊 token 的并集。最长 token 是 `b' accomplishment'`，15 字节，ID 7160。
+查产物的时候看了这几项：词表 10000 项，ID 0–9999；合并 9743 对；特殊 token `<|endoftext|>` 的 ID 是 256；0–255 对应单字节。每个合并对的两部分在合并时已经存在，9743 个结果全部在词表里，没有重复；词表等于基础字节、合并结果与特殊 token 的并集。最长 token 是 `b' accomplishment'`，15 字节，ID 7160。
 
 TinyStories 训练集 2.1GB、15,600,056 行，验证集 22MB。OWT 训练集 12GB、94,568,884 行，BPE 已经训练完，峰值 RSS 8.58GB；OWT 分词器使用 32000 词表，属于另一份产物。
 

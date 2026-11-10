@@ -167,11 +167,11 @@ attn.q_proj.weight    ln1.weight    ffn.w1.weight
 
 `layers` 用 `nn.ModuleList`。普通 `list` 里的模块不会被注册，`parameters()`、`.to()`、`state_dict()` 都看不到。替换之后 key 自动是 `layers.0.attn.q_proj.weight`、`layers.1...` 这种形式。
 
-前向四段：embedding → 循环过 block → `ln_final` → `lm_head`。序列长度取输入的实际长度，`context_length` 只决定 RoPE 缓冲区大小和位置上限，截断输入那项测试靠的就是这一点。
+前向就四步：embedding、过 block、`ln_final`、`lm_head`。序列长度按输入实际长度走，`context_length` 只用来建 RoPE 缓冲区、卡位置上限；截断输入那条测试靠的就是这个。
 
-图 1 在 LM head 后面画了 Softmax，第一版照着添加了，两个 LM 测试都失败。`tests/_snapshots/test_transformer_lm.npz` 里存的是 logits：`min -15.59`，每行求和是 -47339 这种量级，概率的行和应当是 1。图里那步属于生成流程，模型边界停在 LM head。训练时交叉熵内部还会做一次 `log_softmax`。
+我照着图 1 在 LM head 后面加了 Softmax，两个 LM 测试都挂。`tests/_snapshots/test_transformer_lm.npz` 里存的是 logits：`min -15.59`，每行求和是 -47339 这种量级，概率的行和应当是 1。图里那步属于生成流程，模型边界停在 LM head。训练时交叉熵内部还会做一次 `log_softmax`。
 
-## 消融变体
+## 消融模型
 
 2026-11-07。`AblationLM` 接收一个 block 类，`ModuleList` 为每层构造独立实例；`build_ablation_model` 把字符串映射到四个 block 类，只构造选中的模型。
 
@@ -179,7 +179,7 @@ attn.q_proj.weight    ln1.weight    ffn.w1.weight
 
 `remove_all_norm` 控制最终 RMSNorm。第一版无论开关都创建 `ln_final`，layer_norm 消融的参数里还留着一个没用的 norm；现在 `remove_all_norm=True` 时不创建，`forward` 也跳过。
 
-四个变体：
+四个消融模型都放在 `model.py`：
 
 - `TransformerBlockWithoutRMSNorm`：去掉块内 `ln1`、`ln2`，残差结构不变；传 `remove_all_norm=True` 时最终 norm 也去掉。
 - `TransformerBlockPostNorm`：注意力后 `x + Attn(x)` 再过 `ln1`，FFN 后 `z + FFN(z)` 再过 `ln2`。第一版两处都用了 `ln2`，`ln1` 没参与。
@@ -190,13 +190,13 @@ attn.q_proj.weight    ln1.weight    ffn.w1.weight
 
 ## 核算函数
 
-`cs336_basics/model.py:235` 起四个函数，计算写作业用的参数量、内存和 FLOPs，不参与模型前向。
+`cs336_basics/model.py:235` 起四个函数，只算参数量、内存和 FLOPs，不碰前向。
 
 参数量每块 `d_model × (4·d_model + 3·d_ff + 2)`，块外加两份 `vocab_size × d_model` 和 `d_model`。GPT-2 XL 配置得到 1,640,452,800，48 个 block 占 90.2%。乘 4 字节是 6,561,811,200 B，约 6.56 GB 或 6.11 GiB。
 
 `block_matmul_FLOPs` 第一版漏了 Q、K、V 三个投影，只计算分数矩阵、输出投影和 FFN，单块得 54,106,521,600。补上 `6·n·d_model²` 之后单块 69,835,161,600，整模型加 LM head 是 3,516,769,894,400，约 3.52 TFLOPs。
 
-四项占比：QKV 投影 22.5%、分数与加权 9.6%、输出投影 7.5%、FFN 60.4%。
+四项的占比：QKV 投影 22.5%、分数与加权 9.6%、输出投影 7.5%、FFN 60.4%。
 
 注释里抄闭式时把外面的 `d_model` 遗漏了，手写推导是对的。写全应该是
 
@@ -206,7 +206,7 @@ attn.q_proj.weight    ln1.weight    ffn.w1.weight
 
 代入配置得 69,835,161,600，和逐项相加一致。这个式子已经包含 QKV 投影，不需要另加。全部是前向的量，训练按三倍估。
 
-### 规模与上下文的占比
+### 规模和上下文怎么改占比
 
 三档 GPT-2 配置（`d_ff = 8/3·d_model`，`context_length = 1024`）运行同一套核算，单次前向总 FLOPs 从 2.92e11 涨到 1.78e12。占比变化：FFN 39.76% → 54.46%，QKV 投影 14.91% → 20.42%，输出投影 4.97% → 6.81%，分数加加权 13.25% → 10.89%，LM head 27.10% → 7.42%。
 
@@ -218,7 +218,7 @@ attn.q_proj.weight    ln1.weight    ffn.w1.weight
 
 占比的分母是整次前向的总 FLOPs。`count_matmul_FLOPs` 打印的是单块占比，两者相差几个百分点，FFN 在 1024 时是 60.36% 对 57.53%。
 
-## adapters
+## 测试适配器
 
 Linear、Embedding、RMSNorm 三个 adapter 构造后加载权重，属性名和参考 key 对上，写错时报 `Missing key(s) in state_dict: "weight"`。`run_cross_entropy` 直接调用，把输入和目标原样传给 `cross_entropy`（`tests/adapters.py:482`）。
 
