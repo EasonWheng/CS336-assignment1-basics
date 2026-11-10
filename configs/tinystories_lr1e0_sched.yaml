@@ -1,0 +1,41 @@
+# TinyStories 训练配置
+# 最大学习率 1.0, 余弦衰减到 1e-2, 用来观察调度能否把发散拉回来。
+
+model:
+  vocab_size: 10000
+  context_length: 256
+  d_model: 512
+  num_layers: 4
+  num_heads: 16
+  d_ff: 1344
+  rope_theta: 10000.0
+
+optimizer:
+  max_lr: 1.0
+  min_lr: 1.0e-2
+  warmup_steps: 200
+  total_steps: 5000
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  weight_decay: 0.01
+  grad_clip: 1.0
+
+data:
+  train_data: data/tiny_train.npy
+  val_data: data/tiny_val.npy
+  batch_size: 32
+  device: cpu
+
+run:
+  seed: 42
+  log_interval: 10
+  eval_interval: 100
+  eval_batches: 20
+  wandb_enabled: true
+  wandb_project: cs336-a1
+  run_name: tinystories_lr1e0_sched
+
+checkpoint:
+  checkpoint_dir: checkpoints/lr1e0_sched
+  checkpoint_interval: 1000
+  resume: null
