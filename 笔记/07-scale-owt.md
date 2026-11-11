@@ -106,6 +106,8 @@ batch 256 的 `4e-3` 已经越过稳定边缘。它的边缘低于 4e-3，具体
 
 ## B200 45 分钟结果
 
+最终模型叫 TRUMP-786，全称 Tensor-Resonant Ultra-Micro Predictor。配置在 `configs/leaderboard/owt_B200_45min.yaml`，检查点在 `checkpoints/owt_B200/checkpoint_25000.pt`。
+
 三枪都在同一张 B200 上，context 512，验证口径一致：
 
 | 配置 | 步数 | token | max_lr | min_lr | 最终 val | runtime |
@@ -143,7 +145,7 @@ https://wandb.ai/whengeason-southeast-university/cs336-a1/runs/f1a7pz60
 ## 待办
 
 - [x] 4090 跑 5k 学习率扫描，记录最终 val 和曲线。
-- [ ] 4090 用选中的学习率跑 40k 代理，记录 val 和生成。
+- [x] 4090 用选中的学习率跑 40k 代理，已完成。
 - [x] B200 跑 500 步基准，按 token/s 定 45 分钟步数。
 - [x] B200 跑 45 分钟第一枪，必要时跑第二枪。
 - [x] B200 结果记录在 `07-scale-owt.md`。

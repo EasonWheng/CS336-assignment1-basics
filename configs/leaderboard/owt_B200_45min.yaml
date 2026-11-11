@@ -1,0 +1,48 @@
+# TRUMP-786
+# Tensor-Resonant Ultra-Micro Predictor
+#
+# CS336 Assignment 1 OpenWebText leaderboard, single B200, 45-minute budget.
+# 8L / 768, batch 128 × context 512 = 65,536 token/step.
+# 25,000 steps ≈ 1.64B tokens. Runtime 43m48s, final val 3.3347.
+# bf16 autocast for forward/loss; fp32 master weights and AdamW state.
+# Config used by checkpoint_25000.pt in checkpoints/owt_B200/.
+
+model:
+  vocab_size: 32000
+  context_length: 512
+  d_model: 768
+  num_layers: 8
+  num_heads: 12
+  d_ff: 2048
+  rope_theta: 10000.0
+
+optimizer:
+  max_lr: 2.8e-3
+  min_lr: 1.0e-4
+  warmup_steps: 1000
+  total_steps: 25000
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  weight_decay: 0.01
+  grad_clip: 1.0
+
+data:
+  train_data: data/owt_train.npy
+  val_data: data/owt_val.npy
+  batch_size: 128
+  device: cuda
+
+run:
+  seed: 42
+  precision: bf16
+  log_interval: 20
+  eval_interval: 500
+  eval_batches: 20
+  wandb_enabled: true
+  wandb_project: cs336-a1
+  run_name: owt_45min_8l768_b128_lr2.8e-3_min1e-4
+
+checkpoint:
+  checkpoint_dir: checkpoints/leaderboard/owt_45min_8l768_b128_lr2.8e-3_min1e-4
+  checkpoint_interval: 2000
+  resume: null
