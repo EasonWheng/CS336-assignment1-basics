@@ -31,7 +31,7 @@ run:
   log_interval: 10
   eval_interval: 100
   eval_batches: 20
-  wandb_enabled: false
+  wandb_enabled: true
   wandb_project: cs336-a1
   run_name: owt_proxy_8l768_lr5e-4_5k
 

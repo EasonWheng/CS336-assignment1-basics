@@ -1,0 +1,45 @@
+# 45 分钟 B200 排行榜候选
+# 8L / 768，batch 64 × context 512 = 32,768 token/step。
+# 18,300 步约 599.7M token，用来测试能否在 45 分钟内压进 4.0。
+# 先跑 500 步测 B200 的 token/s；45 分钟装不下就按实测比例减步数，装得下再加。
+# batch 64 在 4090 24GB 上放不下，这组只给 B200。
+
+model:
+  vocab_size: 32000
+  context_length: 512
+  d_model: 768
+  num_layers: 8
+  num_heads: 12
+  d_ff: 2048
+  rope_theta: 10000.0
+
+optimizer:
+  max_lr: 2.0e-3
+  min_lr: 2.0e-4
+  warmup_steps: 400
+  total_steps: 18300
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  weight_decay: 0.01
+  grad_clip: 1.0
+
+data:
+  train_data: data/owt_train.npy
+  val_data: data/owt_val.npy
+  batch_size: 64
+  device: cuda
+
+run:
+  seed: 42
+  precision: bf16
+  log_interval: 20
+  eval_interval: 500
+  eval_batches: 20
+  wandb_enabled: true
+  wandb_project: cs336-a1
+  run_name: owt_45min_8l768_b64_600m
+
+checkpoint:
+  checkpoint_dir: checkpoints/leaderboard/owt_45min_8l768_b64
+  checkpoint_interval: 2000
+  resume: null

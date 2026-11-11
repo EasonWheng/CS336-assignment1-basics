@@ -46,6 +46,7 @@ def parse_args(argv=None):
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--ablation", type=str, default=None, choices=["layer_norm_ablation",
                         "pre_norm_ablation", "NoPE", "swiglu_ablation"])
+    parser.add_argument("--precision", type=str, default=None, choices=["fp32", "bf16"])
     return parser.parse_args(argv)
 
 
@@ -84,6 +85,10 @@ def load_config(path, args):
         config.resume = args.resume
     if args.device is not None:
         config.device = args.device
+    config.precision = getattr(config, "precision", "fp32")
+    if args.precision is not None:
+        config.precision = args.precision
+
     config.verbose = bool(args.verbose) or bool(getattr(config, "verbose", False))
 
     return config
@@ -254,8 +259,14 @@ def evaluate(model, val_data, config):
         loss = 0
         for _ in range(config.eval_batches):
             input_tensor, target_tensor = get_batch(val_data, batch_size, context_length, device)
-            logits = model(input_tensor)
-            loss += cross_entropy(logits, target_tensor).item()
+            with torch.autocast(
+                device_type=device,
+                dtype=torch.bfloat16,
+                enabled=(config.precision == "bf16")
+            ):
+                logits = model(input_tensor)
+                loss += cross_entropy(logits.float(), target_tensor).item()
+
         average_val_loss = loss / config.eval_batches
     model.train()
 
@@ -301,8 +312,15 @@ def train(config,
             group['lr'] = lr
         input_seq, target_seq = get_batch(train_dataset, config.batch_size, config.context_length, device=device)
         optimizer.zero_grad(set_to_none=True)
-        logits = model(input_seq)
-        loss = cross_entropy(logits, target_seq)
+        # bf16只在model参数/前向使用，反向/优化器不能使用
+        with torch.autocast(
+            device_type=device,
+            dtype=torch.bfloat16,
+            enabled=(config.precision == "bf16")
+        ):
+            logits = model(input_seq)
+            loss = cross_entropy(logits.float(), target_seq)
+
         loss.backward()     # 计算梯度
         gradient_clipping(model.parameters(), config.grad_clip)
         optimizer.step()
