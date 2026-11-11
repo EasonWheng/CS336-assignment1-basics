@@ -172,3 +172,5 @@ upload/
 output/
 tmp/
 wandb/
+# Local note-writing guide, not part of the upstream assignment
+笔记/CLAUDE.md
