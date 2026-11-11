@@ -1,6 +1,29 @@
 # Scale OWT
 
-2026-11-10。4090 代理配置已经建好，训练还没开始；B200 目标配置也还没开跑。
+2026-11-10。4090 的 5k 学习率扫描已经跑完；B200 代码和环境已准备，数据还在上传。
+
+## 机器
+
+B200 在 Nebius `us-central1`，Regular 实例：
+
+```text
+GPU: 1 × B200 NVLink, 180GB HBM (183,359 MiB)
+CPU: 20 核
+内存: 224 GiB
+磁盘: 200 GiB SSD
+系统: Ubuntu 24.04 LTS, CUDA 13.0
+价格: $8.52/hour
+```
+
+Python 3.12.3，`torch 2.11.0+cu130`，`torch.cuda.is_available()` 为 True，`torch.cuda.get_arch_list()` 包含 `sm_100`。
+
+4090 在 AutoDL：
+
+```text
+GPU: RTX 4090, 24GB
+CPU: 20 核
+内存: 90GB
+```
 
 ## 现在的位置
 
@@ -27,46 +50,51 @@ configs/pre/owt_proxy_8l768_lr5e-4_5k.yaml
 configs/pre/owt_proxy_8l768_lr1e-3_5k.yaml
 ```
 
-三份 5k 配置是学习率扫描：
+5k 扫描结果：
 
-| max_lr | min_lr | token |
-|---:|---:|---:|
-| 3e-4 | 3e-5 | 40.96M |
-| 5e-4 | 5e-5 | 40.96M |
-| 1e-3 | 1e-4 | 40.96M |
+| max_lr | 最终 val |
+|---:|---:|
+| 3e-4 | 4.6886 |
+| 5e-4 | 4.5327 |
+| 1e-3 | 4.5066 |
+| 3e-3 | 5.5719 |
+
+`1e-3` 最好，`3e-3` 已经明显失稳，稳定边缘在 1e-3 附近。`5e-4` 只差 0.026，落在短训练噪声里。
 
 扫描只选起点。选中后在 4090 跑 `owt_proxy_8l768_40k.yaml`，看 327.68M token 下的曲线，再把学习率带到 B200。代理模型的结果不能直接当最终结果，模型规模和 B200 不同。
 
 ## B200 目标
 
-`configs/hi/owt_scale.yaml` 现在是：
+45 分钟排行榜先用 8L / 768：
 
 ```text
-layers=16, d_model=1024, heads=64, d_ff=2688
-context=512, batch=16, steps=40000
-max_lr=1e-3, min_lr=1e-4, warmup=1000
+layers=8, d_model=768, heads=12, d_ff=2048
+context=512, batch=64, tokens/step=32,768
+max_lr=2e-3, min_lr=2e-4, warmup=400
 ```
 
-每步 8192 token，40k 步同样是 327.68M token。约 267M 参数；激活约 45.5GB，权重、梯度、优化器状态约 4.3GB，总计约 50GB。B200 的 180GB HBM 能放下，4090 24GB 会 OOM。
+配置在 `configs/leaderboard/`。先跑 `owt_b200_bench500.yaml` 测 token/s，再按 45 分钟换算步数；目标 18,300 步、约 600M token。第二枪是 `owt_45min_8l768_lr1.5e-3.yaml`，只在第一枪高于 4.0 时跑。
 
-开跑前改这几项：
+`configs/hi/owt_scale.yaml` 是更大的规模化配置：
 
-- `num_heads` 从 64 改成 32，head_dim 从 16 变成 32。
-- `max_lr` 从 1e-3 改成 5e-4，等 4090 扫描结果再定。
-- `checkpoint_interval` 从 500 改成 2000 或 5000。267M 参数一个检查点约 3.2GB，500 步一次会写出约 256GB。
-- `eval_interval` 从 100 改成 200 或 500，减少大模型验证开销。
-- `checkpoint_dir` 和 `run_name` 换成独立名字，避免覆盖已有 OWT 结果。
-- 训练循环现在是 fp32，B200 上用 bf16 autocast 可以省显存、提速度。
+```text
+layers=24, d_model=1280, heads=32, d_ff=3392
+context=512, batch=16, steps=40000
+max_lr=3e-4, min_lr=3e-5, warmup=1000
+```
+
+约 554M 参数，batch 16 的 fp32 激活约 45.6GB，bf16 激活约 22.8GB，B200 180GB 能放下。327.68M token 下 token/参数只有 0.69，容量偏大；这组只作为规模化对照，45 分钟榜单先跑 8L / 768。
 
 ## 学习率
 
-4 层 512 维 OWT 的最优学习率是 1e-3，这个数不能直接搬到 8 层 768 维或 16 层 1024 维。模型变宽、变深，batch 和上下文也变了，最优学习率会移动。5k 扫描在 4090 上一小时左右能跑完；B200 上跑错学习率，返工成本高得多。
+8L / 768、batch 16 的 5k 扫描：`3e-4` 4.6886，`5e-4` 4.5327，`1e-3` 4.5066，`3e-3` 5.5719。`1e-3` 最好，`3e-3` 明显失稳。
 
-扫描看两点：同一步数下哪档 val 最低，曲线有没有尖峰。差距在噪声内时选中间档，B200 上再确认一次，不重复三档扫描。
+45 分钟榜单用 batch 64，按平方根放大到 `2e-3`；第一枪曲线抬头就退到 `1.5e-3`。24L / 1280 这种更大的模型从 `3e-4` 起，不能把 1e-3 直接搬过去。
 
 ## 待办
 
-- [ ] 4090 跑 5k 学习率扫描，记录最终 val 和曲线。
+- [x] 4090 跑 5k 学习率扫描，记录最终 val 和曲线。
 - [ ] 4090 用选中的学习率跑 40k 代理，记录 val 和生成。
-- [ ] B200 上按 180GB 显存配置跑放大模型，记录实际耗时和费用。
-- [ ] 把代理结果、B200 结果和 bits/byte 补回 `06-训练记录.md`。
+- [ ] B200 跑 500 步基准，按 token/s 定 45 分钟步数。
+- [ ] B200 跑 45 分钟第一枪，必要时跑第二枪。
+- [ ] 把 B200 结果和 bits/byte 补回 `06-训练记录.md`。
