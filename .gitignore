@@ -164,3 +164,11 @@ cython_debug/
 
 # Assignment datasets (downloaded per README, tens of GB)
 data/
+
+# Local training artifacts and backups (kept outside the repository)
+checkpoints/
+backup/
+upload/
+output/
+tmp/
+wandb/

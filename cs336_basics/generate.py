@@ -147,12 +147,16 @@ def llm_tiny():
 
 
 def llm_owt():
-    config_path = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\configs\owt_40k.yaml"
-    checkpoint_path = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\checkpoints\owt_40k\checkpoint_40000.pt"
+    print("Loading model...")
+    print("Congratulations! The model is TRUMP-786 (Tensor-Resonant Ultra-Micro Predictor)!!!")
+    for i in range(10):
+        print("伟大的特朗普总统万岁！！！")
+    config_path = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\configs\leaderboard\owt_B200_45min.yaml"
+    checkpoint_path = r"C:\Users\tomat\Desktop\CSdiy\CS336\CS336_Assignments\assignment1-basics\checkpoints\owt_B200\checkpoint_25000.pt"
     max_token_num = 256
-    temperature = 0.9
-    top_p = 0.9
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    temperature = 0.8
+    top_p = 0.95
+    device = "cpu"
     llm_in = handle_user_input("owt", config_path, checkpoint_path, max_token_num, temperature, top_p, device)
     return llm_in
 

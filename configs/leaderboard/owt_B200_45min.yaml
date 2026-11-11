@@ -6,6 +6,7 @@
 # 25,000 steps ≈ 1.64B tokens. Runtime 43m48s, final val 3.3347.
 # bf16 autocast for forward/loss; fp32 master weights and AdamW state.
 # Config used by checkpoint_25000.pt in checkpoints/owt_B200/.
+# device: cpu is for local generation. B200 training uses --device cuda on the command line.
 
 model:
   vocab_size: 32000
@@ -30,7 +31,7 @@ data:
   train_data: data/owt_train.npy
   val_data: data/owt_val.npy
   batch_size: 128
-  device: cuda
+  device: cpu
 
 run:
   seed: 42

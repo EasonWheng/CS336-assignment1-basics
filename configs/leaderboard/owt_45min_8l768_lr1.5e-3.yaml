@@ -1,6 +1,6 @@
 # B200 45 分钟排行榜：第二枪
 # 第一枪 val 高于 4.0 时才跑，其他参数与第一枪相同，只降学习率。
-# 18,300 步约 599.7M token；按 500 步基准实测的 token/s 调整 total_steps。
+# 44,000 步约 1.44B token；按 500 步基准实测的 token/s 调整 total_steps。
 # 训练循环没有 wall-clock 上限，到 45 分钟前手动停止或按实测步数跑完。
 # bf16 需要训练循环支持 autocast。
 
@@ -16,8 +16,8 @@ model:
 optimizer:
   max_lr: 1.5e-3
   min_lr: 1.5e-4
-  warmup_steps: 400
-  total_steps: 18300
+  warmup_steps: 1000
+  total_steps: 44000
   betas: [0.9, 0.95]
   eps: 1.0e-8
   weight_decay: 0.01
@@ -37,9 +37,9 @@ run:
   eval_batches: 20
   wandb_enabled: true
   wandb_project: cs336-a1
-  run_name: owt_45min_8l768_lr1.5e-3
+  run_name: owt_45min_8l768_lr1.5e-3_44k
 
 checkpoint:
-  checkpoint_dir: checkpoints/leaderboard/owt_45min_8l768_lr1.5e-3
+  checkpoint_dir: checkpoints/leaderboard/owt_45min_8l768_lr1.5e-3_44k
   checkpoint_interval: 2000
   resume: null

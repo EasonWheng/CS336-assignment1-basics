@@ -135,7 +135,7 @@ batch 128 的 25,000 步这枪使用正式配置，最终 val 3.3347，runtime 2
 提交材料放在：
 
 ```text
-CS336/leaderboard_submission_20261111/
+CS336/CS336_Assignments/assignment1-basics/leaderboard_submission/
 ```
 
 W&B run：
