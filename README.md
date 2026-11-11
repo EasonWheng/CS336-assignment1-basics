@@ -2,7 +2,7 @@
   <img src="assets/cover.png" alt="做 LLM 啦" width="100%">
 </p>
 
-# CS336 Spring 2025 Assignment 1: Basics
+# CS336 Spring 2026 Assignment 1: Basics
 
 For a full description of the assignment, see the assignment handout at
 [cs336_assignment1_basics.pdf](./cs336_assignment1_basics.pdf)
