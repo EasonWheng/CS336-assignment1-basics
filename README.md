@@ -2,179 +2,88 @@
   <img src="assets/cover.png" alt="做 LLM 啦" width="100%">
 </p>
 
-# CS336 Spring 2026 Assignment 1: Basics
+<h1 align="center">CS336 A1 · 从零训练语言模型</h1>
 
-> **仅限个人非商业自学 · Personal self-study only**
->
-> 我编写的实现、配置与笔记按 [Personal Noncommercial Self-Study License 1.0](LICENSE) 公开。允许个人下载、运行和私下修改，用于非商业自学。商业使用、机构使用、付费教学、另行发布衍生版本以及作为作业或竞赛成果提交，需要遵守许可证中的限制或另获许可。
->
-> Stanford 课程材料、起始代码、测试和其他第三方内容保留原许可。原始声明见 [Stanford MIT License](LICENSES/Stanford-MIT.txt)。这是带用途限制的源码公开项目。
+<p align="center">从 UTF-8 字节到 Transformer 续写，再到单卡 B200 的 OpenWebText 实验。</p>
 
-For a full description of the assignment, see the assignment handout at
-[cs336_assignment1_basics.pdf](./cs336_assignment1_basics.pdf)
+<p align="center">
+  <img alt="CS336 Spring 2026" src="https://img.shields.io/badge/CS336-Spring%202026-8C1515?style=flat-square">
+  <img alt="PyTorch 2.11" src="https://img.shields.io/badge/PyTorch-2.11-EE4C2C?style=flat-square&logo=pytorch&logoColor=white">
+  <img alt="NVIDIA B200" src="https://img.shields.io/badge/NVIDIA-B200-76B900?style=flat-square&logo=nvidia&logoColor=white">
+  <img alt="仅限个人非商业自学" src="https://img.shields.io/badge/use-personal%20study%20only-6D5ACF?style=flat-square">
+</p>
 
-If you see any issues with the assignment handout or code, please feel free to
-raise a GitHub issue or open a pull request with a fix.
-
-<p>
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white">
-  <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-2.11-EE4C2C?logo=pytorch&logoColor=white">
-  <img alt="GPU" src="https://img.shields.io/badge/GPU-NVIDIA%20B200-76B900?logo=nvidia&logoColor=white">
-  <img alt="Validation loss" src="https://img.shields.io/badge/val%20loss-3.3347-2a78d6">
+<p align="center">
+  <a href="#trump-786">B200 实验</a> ·
+  <a href="#从字节到续写">代码导览</a> ·
+  <a href="#开始运行">开始运行</a> ·
+  <a href="#学习资料">学习资料</a> ·
+  <a href="#许可">许可</a>
 </p>
 
 ## TRUMP-786
 
 **Tensor-Resonant Ultra-Micro Predictor**
 
-A byte-level BPE tokenizer, a pre-norm decoder-only Transformer, an AdamW
-optimizer, and a small training stack written from scratch for CS336
-Assignment 1.
+<table>
+  <tr>
+    <td align="center"><strong>3.33471</strong><br>OpenWebText 验证 loss</td>
+    <td align="center"><strong>43 分 48 秒</strong><br>单张 B200 · 最终验证点</td>
+    <td align="center"><strong>16.38 亿</strong><br>训练 token</td>
+  </tr>
+</table>
 
-| | |
-|---|---|
-| Final OpenWebText validation loss | **3.3347** |
-| Training budget | 25,000 steps · 1.64B tokens |
-| Wall-clock | 43m48s on one B200 180GB |
-| Context length | 512 |
-| Parameters | 8 layers · 768 width · 12 heads |
-| Vocabulary | 32,000 byte-level BPE |
+![TRUMP-786 训练和验证 loss 随墙钟时间下降的曲线](leaderboard_submission/images/trump786_learning_curve.png)
 
-## Architecture
+模型采用 **8 层 · 768 宽度 · 12 个注意力头**，上下文为 **512 token**，配套 **32,000 项字节级 BPE 词表**。正式训练跑了 25,000 步，每步处理 128 × 512 个 token。AdamW 配合 BF16 autocast，学习率预热 1,000 步，再从 `2.8e-3` 按余弦降至 `1e-4`。 [完整配置](configs/leaderboard/owt_B200_45min.yaml) · [榜单提交材料](leaderboard_submission/PR_DESCRIPTION.md)
 
-```text
-Decoder-only Transformer
-  pre-norm residual blocks
-  RMSNorm
-  RoPE
-  causal multi-head self-attention
-  SwiGLU feed-forward, d_ff = 2048
-  separate input embedding and LM head
-```
+## 从字节到续写
 
-The implementation includes the tokenizer, BPE training, data pipeline,
-attention, RoPE, SwiGLU, optimizer, learning-rate schedule, gradient clipping,
-checkpointing, and sampling code. No `torch.nn` transformer or optimizer
-implementations are used.
-
-## Training recipe
+| 环节 | 实现入口 |
+| --- | --- |
+| 学习 BPE 合并规则，把文本编码成 token ID | [tokenizer.py](cs336_basics/tokenizer.py) · [tokenize_data.py](scripts/tokenize_data.py) |
+| 把 token 送入 pre-norm Transformer，计算下一个 token 的 logits | [model.py](cs336_basics/model.py) |
+| 计算交叉熵，按学习率调度更新参数并保存检查点 | [nn_utils.py](cs336_basics/nn_utils.py) · [optimizer.py](cs336_basics/optimizer.py) · [train.py](cs336_basics/train.py) |
+| 用温度与 Top-p 采样，把生成的 ID 解码成文本 | [generate.py](cs336_basics/generate.py) |
 
 ```text
-batch size        128
-context length    512
-steps             25,000
-tokens            1,638,400,000
-optimizer         AdamW
-betas             (0.9, 0.95)
-epsilon           1e-8
-weight decay      0.01
-gradient clipping 1.0
-learning rate     cosine, 2.8e-3 -> 1e-4, warmup 1,000
-precision         bf16 autocast
-hardware          1 × NVIDIA B200 180GB
+UTF-8 原文 → 字节级 BPE → Token ID → Embedding
+                                    ↓
+                  RMSNorm · 因果注意力 + RoPE · SwiGLU
+                                    ↓
+                     LM Head → 下一 token → 续写
 ```
 
-The final run is logged in the public W&B project:
+## 开始运行
 
-[TRUMP-786 on W&B](https://forge.coreweave.com/wandb/whengeason-southeast-university/CS336-a1-B200-owt/runs/f1a7pz60)
-
-## Quick start
+在仓库根目录用 Python 3.12 配好环境并运行已有测试。
 
 ```bash
 uv sync --python 3.12
-
-# unit tests
 uv run pytest
+```
 
-# train the final configuration on a B200
+训练前，从 TinyStories 或 Stanford 的 OpenWebText 样本下载原文，并用配套词表生成 `.npy` token 文件。分词脚本里的数据路径需指向本机。 [数据目录说明](data/数据说明.txt) · [分词脚本](scripts/tokenize_data.py) · [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories) · [OpenWebText 样本](https://huggingface.co/datasets/stanford-cs336/owt-sample)
+
+准备好 `data/owt_train.npy` 和 `data/owt_val.npy` 后，可以启动 B200 实验。模型检查点由训练生成，保存在 Git 仓库之外。
+
+```bash
 uv run python -m cs336_basics.train \
   --config configs/leaderboard/owt_B200_45min.yaml \
   --device cuda
-
-# interactive generation with the local CPU build
-uv run python cs336_basics/generate.py
 ```
 
-The training configs expect:
+## 学习资料
 
-```text
-data/owt_train.npy
-data/owt_val.npy
-```
+| 想看什么 | 从这里读 |
+| --- | --- |
+| 作业要求 | [官方指导书 PDF](cs336_assignment1_basics.pdf) · [中文稿](cs336_assignment1_basics_中文.md) |
+| 完整学习记录 | [《从零实现语言模型》PDF](笔记/CS336%20A1%20·%20从零实现语言模型.pdf) · [手写笔记](笔记/手写笔记.pdf) |
+| 实现细节 | [分词](笔记/01-Tokenizer.md) · [模型](笔记/02-Model.md) · [训练](笔记/03-Training.md) · [生成](笔记/04-Generation.md) |
+| 实验记录 | [OWT BPE](笔记/05-OWT-BPE-训练记录.md) · [TinyStories 与 OWT](笔记/06-训练记录.md) · [B200 规模化](笔记/07-scale-owt.md) |
 
-## Repository layout
+## 许可
 
-```text
-cs336_basics/          tokenizer, model, optimizer, training and generation
-configs/               TinyStories, OWT, LR/batch sweeps and ablations
-configs/leaderboard/   final 45-minute B200 configuration
-leaderboard_submission/ score row, PR description and wall-clock curve
-tests/                 unit tests and adapters
-笔记/                   implementation notes and experiment records
-assets/                README artwork
-```
+本项目的原创实现、配置与笔记以**个人非商业自学**为授权范围。允许个人下载、运行和私下修改，用于非商业自学。商用、机构使用、付费教学、再分发及提交为作业或竞赛成果的规定见完整条款。 [个人非商业自学许可](LICENSE)
 
-The final checkpoint is kept outside Git in:
-
-```text
-checkpoints/owt_B200/checkpoint_25000.pt
-```
-
-## Notes
-
-- [Tokenizer](笔记/01-Tokenizer.md)
-- [Model](笔记/02-Model.md)
-- [Training](笔记/03-Training.md)
-- [Generation](笔记/04-Generation.md)
-- [OWT BPE](笔记/05-OWT-BPE-训练记录.md)
-- [Training records](笔记/06-训练记录.md)
-- [Scale OWT / TRUMP-786](笔记/07-scale-owt.md)
-
-The complete written report is in
-[笔记/CS336 A1 · 从零实现语言模型.pdf](笔记/CS336%20A1%20·%20从零实现语言模型.pdf).
-The handwritten notes are in
-[笔记/手写笔记.pdf](笔记/手写笔记.pdf).
-
----
-
-## Setup
-
-### Environment
-We manage our environments with `uv` to ensure reproducibility, portability, and ease of use.
-Install `uv` [here](https://github.com/astral-sh/uv#installation) (recommended), or run `pip install uv`/`brew install uv`.
-We recommend reading a bit about managing projects in `uv` [here](https://docs.astral.sh/uv/guides/projects/#managing-dependencies) (you will not regret it!).
-
-You can now run any code in the repo using
-```sh
-uv run <python_file_path>
-```
-and the environment will be automatically solved and activated when necessary.
-
-### Run unit tests
-
-
-```sh
-uv run pytest
-```
-
-Initially, all tests should fail with `NotImplementedError`s.
-To connect your implementation to the tests, complete the
-functions in [./tests/adapters.py](./tests/adapters.py).
-
-### Download data
-Download the TinyStories data and a subsample of OpenWebText
-
-``` sh
-mkdir -p data
-cd data
-
-wget https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-train.txt
-wget https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-valid.txt
-
-wget https://huggingface.co/datasets/stanford-cs336/owt-sample/resolve/main/owt_train.txt.gz
-gunzip owt_train.txt.gz
-wget https://huggingface.co/datasets/stanford-cs336/owt-sample/resolve/main/owt_valid.txt.gz
-gunzip owt_valid.txt.gz
-
-cd ..
-```
+Stanford 课程材料、起始代码、测试及其他第三方内容适用各自的原有许可。 [Stanford MIT 原始声明](LICENSES/Stanford-MIT.txt)
