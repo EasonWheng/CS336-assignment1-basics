@@ -146,7 +146,7 @@ flowchart LR
 | OpenWebText 基线 | 4 | 256 | 40,000 | 327.68M | 4.1755 |
 | TRUMP-786 | 8 | 512 | 25,000 | 1,638.40M | **3.33471** |
 
-TinyStories 用来跑通训练，OpenWebText 基线把同一套流程搬到网页语料。B200 正式跑每步处理 65,536 token，到 5,000 步累计 327.68M token 时，验证 loss 为 3.7484。两组 OpenWebText 实验同时改变了模型形状、上下文和 batch。B200 全程按最终验证点的墙钟时间折算约 623k token/s。 [训练记录](笔记/06-训练记录.md) · [规模化实验](笔记/07-scale-owt.md)
+基础实验在 RTX 4090、RTX 4090D 和 RTX 5090 上完成，TRUMP-786 的最终训练使用单张 NVIDIA B200。TinyStories 用来跑通训练，OpenWebText 基线把同一套流程搬到网页语料。B200 正式跑每步处理 65,536 token，到 5,000 步累计 327.68M token 时，验证 loss 为 3.7484。两组 OpenWebText 实验同时改变了模型形状、上下文和 batch。B200 全程按最终验证点的墙钟时间折算约 623k token/s。 [训练记录](笔记/06-训练记录.md) · [规模化实验](笔记/07-scale-owt.md)
 
 ## 开始运行
 
