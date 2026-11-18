@@ -96,8 +96,8 @@ flowchart TB
 RoPE 旋转每个头中 Q、K 的相邻维度对。因果掩码 `M` 将未来位置的分数设为负无穷，当前 token 只聚合自身和过去位置的 V。八层 block 后，残差流经过最终 RMSNorm 和独立的 LM head，得到词表 logits。 [模型实现](cs336_basics/model.py)
 
 ```math
-\operatorname{Attention}(Q,K,V)=
-\operatorname{softmax}\!\left(\frac{QK^\top}{\sqrt{d_h}}+M\right)V
+\mathrm{Attention}(Q,K,V)=
+\mathrm{softmax}\left(\frac{QK^\top}{\sqrt{d_h}}+M\right)V
 ```
 
 ### 03 · 下一 token 预测与优化
