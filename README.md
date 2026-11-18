@@ -93,11 +93,16 @@ flowchart TB
 | 注意力分数 | B × H × T × T | 128 × 12 × 512 × 512 |
 | 词表 logits | B × T × V | 128 × 512 × 32,000 |
 
-RoPE 旋转每个头中 Q、K 的相邻维度对。因果掩码 `M` 将未来位置的分数设为负无穷，当前 token 只聚合自身和过去位置的 V。八层 block 后，残差流经过最终 RMSNorm 和独立的 LM head，得到词表 logits。 [模型实现](cs336_basics/model.py)
+RoPE 旋转每个头中 Q、K 的相邻维度对。代码用 `torch.tril` 创建布尔掩码，再用 `masked_fill_` 把未来位置填成负无穷。对填充后的分数沿 key 维做 softmax，再乘以 V。八层 block 后，残差流经过最终 RMSNorm 和独立的 LM head，得到词表 logits。 [模型实现](cs336_basics/model.py)
 
 ```math
-\mathrm{Attention}(Q,K,V)=
-\mathrm{softmax}\left(\frac{QK^\top}{\sqrt{d_h}}+M\right)V
+S = \frac{QK^\top}{\sqrt{d_h}},
+\qquad
+\widetilde{S}_{ij} =
+\begin{cases}
+S_{ij} & j \le i \\
+-\infty & j > i
+\end{cases}
 ```
 
 ### 03 · 下一 token 预测与优化
