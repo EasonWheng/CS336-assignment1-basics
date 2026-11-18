@@ -1,7 +1,75 @@
-Copyright 2025 Stanford University
+Personal Noncommercial Self-Study License 1.0
+Copyright (c) 2026 Eason Wheng
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+Effective date: 2026-11-18
 
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+1. Scope and third-party rights
 
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+This license applies only to original code, modifications, configurations,
+notes, and other material authored by Eason Wheng in this repository
+(the "Covered Material"). It applies only to rights the author owns.
+
+Stanford University course materials, starter code, tests and fixtures,
+and all other third-party material retain their original licenses and
+copyright notices. The Stanford MIT notice is preserved in
+LICENSES/Stanford-MIT.txt. In a file containing both third-party material
+and the author's contributions, this license covers only the author's
+contributions. Third-party permissions are not restricted by this license.
+
+Any rights already granted under another license for an earlier copy
+remain governed by that license. This license does not revoke prior grants.
+
+2. Permission for personal self-study
+
+An individual may view, download, copy, run, and privately modify the
+Covered Material solely for that individual's personal, noncommercial
+self-study. Private experiments and local training for that purpose
+are permitted. Copyright and license notices must be preserved.
+
+3. Uses requiring separate written permission
+
+The following uses of the Covered Material require prior written
+permission from Eason Wheng:
+
+- Commercial use, paid courses, paid tutoring, consulting, advertising,
+  monetization, or incorporation into a product or hosted service.
+- Use by or on behalf of a business, institution, or organization,
+  including internal training, work projects, and organized instruction.
+- Redistribution, publication, sublicensing, or sharing of copies,
+  modified versions, or derivative works beyond the personal self-study
+  permission in Section 2 and the platform permissions in Section 4.
+- Submitting the Covered Material or a derivative as an assignment,
+  examination, assessment, or competition entry, or claiming it as
+  one's own work.
+
+A link to this repository and brief attributed quotations used to discuss
+what the reader learned are permitted for noncommercial study discussion.
+
+4. Hosting-platform permissions
+
+The author permits viewing and forking through GitHub's normal platform
+features as required by the applicable GitHub terms. Such forks must
+retain the copyright and license notices. The personal self-study
+restriction continues to apply to the author's Covered Material.
+
+5. Termination
+
+Permission terminates automatically if a user breaches this license.
+After termination, the user must stop using and distributing the
+Covered Material and delete their copies, except where retention is
+required by law or separately permitted by an applicable license.
+
+6. No warranty and limitation of liability
+
+THE COVERED MATERIAL IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. TO THE MAXIMUM EXTENT
+PERMITTED BY LAW, THE AUTHOR SHALL NOT BE LIABLE FOR CLAIMS, DAMAGES,
+OR OTHER LIABILITY ARISING FROM THE MATERIAL OR ITS USE.
+
+7. Separate permission
+
+For permission beyond this license, contact EasonWheng through GitHub:
+https://github.com/EasonWheng
+
+This repository is source-available under a use-restricted license.

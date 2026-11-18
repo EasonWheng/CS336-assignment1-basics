@@ -4,6 +4,12 @@
 
 # CS336 Spring 2026 Assignment 1: Basics
 
+> **仅限个人非商业自学 · Personal self-study only**
+>
+> 我编写的实现、配置与笔记按 [Personal Noncommercial Self-Study License 1.0](LICENSE) 公开。允许个人下载、运行和私下修改，用于非商业自学。商业使用、机构使用、付费教学、另行发布衍生版本以及作为作业或竞赛成果提交，需要遵守许可证中的限制或另获许可。
+>
+> Stanford 课程材料、起始代码、测试和其他第三方内容保留原许可。原始声明见 [Stanford MIT License](LICENSES/Stanford-MIT.txt)。这是带用途限制的源码公开项目。
+
 For a full description of the assignment, see the assignment handout at
 [cs336_assignment1_basics.pdf](./cs336_assignment1_basics.pdf)
 
