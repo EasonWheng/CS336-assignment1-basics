@@ -93,12 +93,12 @@ flowchart TB
 | 注意力分数 | B × H × T × T | 128 × 12 × 512 × 512 |
 | 词表 logits | B × T × V | 128 × 512 × 32,000 |
 
-RoPE 旋转每个头中 Q、K 的相邻维度对。因果掩码 $M$ 将未来位置的分数设为负无穷，当前 token 只聚合自身和过去位置的 V。八层 block 后，残差流经过最终 RMSNorm 和独立的 LM head，得到词表 logits。 [模型实现](cs336_basics/model.py)
+RoPE 旋转每个头中 Q、K 的相邻维度对。因果掩码 `M` 将未来位置的分数设为负无穷，当前 token 只聚合自身和过去位置的 V。八层 block 后，残差流经过最终 RMSNorm 和独立的 LM head，得到词表 logits。 [模型实现](cs336_basics/model.py)
 
-$$
+```math
 \operatorname{Attention}(Q,K,V)=
 \operatorname{softmax}\!\left(\frac{QK^\top}{\sqrt{d_h}}+M\right)V
-$$
+```
 
 ### 03 · 下一 token 预测与优化
 
@@ -119,9 +119,9 @@ flowchart LR
 
 例如输入 <code>[the, cat, sat]</code>，目标是 <code>[cat, sat, down]</code>。<code>get_batch</code> 为两者共用同一批随机窗口起点，目标索引再加一。交叉熵先减最大 logit，再用 <code>gather</code> 取正确 token 的分数。训练中对多个位置的损失求平均，经反向传播、全局 L2 梯度裁剪和 AdamW 更新。 [取 batch](cs336_basics/data.py) · [交叉熵](cs336_basics/nn_utils.py) · [训练循环](cs336_basics/train.py)
 
-$$
-\ell(z,y)=m+\log\sum_j e^{z_j-m}-z_y,\qquad m=\max_j z_j
-$$
+```math
+\ell(z,y)=\log\!\left(\sum_j e^{z_j-m}\right)-(z_y-m),\qquad m=\max_j z_j
+```
 
 ### 04 · 从最后一个 logit 向量续写
 
